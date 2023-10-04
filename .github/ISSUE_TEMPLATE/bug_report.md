@@ -30,7 +30,6 @@ If applicable, add logs to help explain your problem.
  - Vault version: [e.g. 1.11.2]
  - Juju version: [e.g. 2.9.23]
  - Cloud Environment [e.g. GKE]
- - Kubernetes version [e.g. 1.22]
 
 **Additional context**
 Add any other context about the problem here.
