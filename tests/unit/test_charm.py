@@ -44,5 +44,5 @@ class TestCharm(unittest.TestCase):
         mock_snap_cache.assert_called_once_with()
 
         assert vault_snap.ensure_called
-        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.10/stable", 2091)
+        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.12/stable", 2166)
         assert vault_snap.hold_called

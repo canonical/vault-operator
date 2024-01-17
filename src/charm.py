@@ -15,8 +15,8 @@ from ops.model import ActiveStatus, MaintenanceStatus
 logger = logging.getLogger(__name__)
 
 VAULT_SNAP_NAME = "vault"
-VAULT_SNAP_CHANNEL = "1.10/stable"
-VAULT_SNAP_REVISION = 2091
+VAULT_SNAP_CHANNEL = "1.12/stable"
+VAULT_SNAP_REVISION = 2166
 
 
 class VaultOperatorCharm(CharmBase):
