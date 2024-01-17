@@ -1,4 +1,4 @@
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 name: vault
@@ -24,11 +24,9 @@ assumes:
 storage:
   vault-raft:
     type: filesystem
-    minimum-size: 10G
     location: /var/snap/vault/common/raft
   config:
     type: filesystem
-    minimum-size: 5M
     location: /var/snap/vault/common/config
 
 peers:

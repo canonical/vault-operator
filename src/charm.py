@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 
@@ -95,6 +95,7 @@ class UnitFileDirectory:
         file_name = f"{parent_dir}/{file_name}"
         with open(file_name, "w") as write_file:
             write_file.write(content)
+        logger.info("Pushed file %s", file_name)
 
 
 def config_file_content_matches(existing_content: str, new_content: str) -> bool:
