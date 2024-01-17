@@ -48,7 +48,9 @@ class MockUnitFileDirectory:
 
 
 class TestCharm(unittest.TestCase):
-    def setUp(self):
+    @patch("charm.UnitFileDirectory")
+    def setUp(self, patch_unit_file_directory):
+        patch_unit_file_directory.return_value = MockUnitFileDirectory()
         self.app_name = "vault-k8s"
         self.harness = ops.testing.Harness(VaultOperatorCharm)
         self.addCleanup(self.harness.cleanup)
@@ -58,11 +60,10 @@ class TestCharm(unittest.TestCase):
         """Set the peer relation and return the relation id."""
         return self.harness.add_relation(relation_name="vault-peers", remote_app=self.app_name)
 
-    @patch("charm.UnitFileDirectory")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
-        self, mock_snap_cache, patch_get_binding, patch_unit_file_directory
+        self, mock_snap_cache, patch_get_binding
     ):
         vault_snap = MockSnapObject("vault")
         snap_cache = {"vault": vault_snap}
@@ -71,7 +72,6 @@ class TestCharm(unittest.TestCase):
         patch_get_binding.return_value = MockBinding(
             bind_address="1.2.1.2", ingress_address="10.1.0.1"
         )
-        patch_unit_file_directory.return_value = MockUnitFileDirectory()
 
         self.harness.charm.on.install.emit()
 

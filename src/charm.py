@@ -56,7 +56,12 @@ def render_vault_config_file(
 
 
 class UnitFileDirectory:
-    """A class to interact with a unit file directory."""
+    """A class to interact with a unit file directory.
+
+    This class has the same method signatures as Pebble API in the Ops
+    Library. This is to improve consistency between the Machine and Kubernetes
+    versions of the charm.
+    """
 
     def exists(self, path: str) -> bool:
         """Check if a file exists.
@@ -136,6 +141,7 @@ class VaultOperatorCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self.unit_file_directory = UnitFileDirectory()
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
@@ -182,13 +188,12 @@ class VaultOperatorCharm(CharmBase):
             node_id=self._node_id,
         )
         existing_content = ""
-        unit_file_directory = UnitFileDirectory()
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
-        if unit_file_directory.exists(path=vault_config_file_path):
-            existing_content = unit_file_directory.pull(path=vault_config_file_path)
+        if self.unit_file_directory.exists(path=vault_config_file_path):
+            existing_content = self.unit_file_directory.pull(path=vault_config_file_path)
 
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
-            unit_file_directory.push(
+            self.unit_file_directory.push(
                 path=vault_config_file_path,
                 source=content,
             )
