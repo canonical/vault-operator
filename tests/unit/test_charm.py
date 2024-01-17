@@ -25,19 +25,53 @@ class MockSnapObject:
         self.hold_called = True
 
 
+class MockNetwork:
+    def __init__(self, bind_address: str, ingress_address: str):
+        self.bind_address = bind_address
+        self.ingress_address = ingress_address
+
+
+class MockBinding:
+    def __init__(self, bind_address: str, ingress_address: str):
+        self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
+
+
+class MockUnitFileDirectory:
+    def exists(self, file_path: str) -> bool:
+        pass
+
+    def push(self, parent_dir: str, file_name: str, content: str) -> None:
+        pass
+
+    def pull(self, file_path: str) -> str:
+        pass
+
+
 class TestCharm(unittest.TestCase):
     def setUp(self):
+        self.app_name = "vault-k8s"
         self.harness = ops.testing.Harness(VaultOperatorCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
+    def _set_peer_relation(self) -> int:
+        """Set the peer relation and return the relation id."""
+        return self.harness.add_relation(relation_name="vault-peers", remote_app=self.app_name)
+
+    @patch("charm.UnitFileDirectory")
+    @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
-        self, mock_snap_cache
+        self, mock_snap_cache, patch_get_binding, patch_unit_file_directory
     ):
         vault_snap = MockSnapObject("vault")
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="10.1.0.1"
+        )
+        patch_unit_file_directory.return_value = MockUnitFileDirectory()
 
         self.harness.charm.on.install.emit()
 
