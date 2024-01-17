@@ -1,0 +1,7 @@
+black
+codespell
+coverage[toml]
+ops
+pyright
+pytest
+ruff
