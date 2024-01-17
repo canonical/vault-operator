@@ -37,13 +37,13 @@ class MockBinding:
 
 
 class MockUnitFileDirectory:
-    def exists(self, file_path: str) -> bool:
+    def exists(self, path: str) -> bool:
         pass
 
-    def push(self, parent_dir: str, file_name: str, content: str) -> None:
+    def push(self, path: str, source: str) -> None:
         pass
 
-    def pull(self, file_path: str) -> str:
+    def pull(self, path: str) -> str:
         pass
 
 

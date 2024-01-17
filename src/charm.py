@@ -7,7 +7,6 @@
 
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 
 import hcl  # type: ignore[import-untyped]
@@ -59,43 +58,40 @@ def render_vault_config_file(
 class UnitFileDirectory:
     """A class to interact with a unit file directory."""
 
-    def exists(self, file_path: str) -> bool:
+    def exists(self, path: str) -> bool:
         """Check if a file exists.
 
         Args:
-            file_path: The path of the file
+            path: The path of the file
 
         Returns:
             bool: Whether the file exists
         """
-        return os.path.isfile(file_path)
+        return os.path.isfile(path)
 
-    def pull(self, file_path: str) -> str:
+    def pull(self, path: str) -> str:
         """Get the content of a file.
 
         Args:
-            file_path: The path of the file
+            path: The path of the file
 
         Returns:
             str: The content of the file
         """
-        with open(file_path, "r") as read_file:
+        with open(path, "r") as read_file:
             content = read_file.read()
         return content
 
-    def push(self, parent_dir: str, file_name: str, content: str) -> None:
+    def push(self, path: str, source: str) -> None:
         """Pushes a file to the unit.
 
         Args:
-            parent_dir: The parent directory of the file to be pushed
-            file_name: The name of the file to be pushed
-            content: The contents of the file to be pushed
+            path: The path of the file
+            source: The contents of the file to be pushed
         """
-        Path(parent_dir).mkdir(parents=True, exist_ok=True)
-        file_name = f"{parent_dir}/{file_name}"
-        with open(file_name, "w") as write_file:
-            write_file.write(content)
-        logger.info("Pushed file %s", file_name)
+        with open(path, "w") as write_file:
+            write_file.write(source)
+        logger.info("Pushed file %s", path)
 
 
 def config_file_content_matches(existing_content: str, new_content: str) -> bool:
@@ -188,14 +184,13 @@ class VaultOperatorCharm(CharmBase):
         existing_content = ""
         unit_file_directory = UnitFileDirectory()
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
-        if unit_file_directory.exists(file_path=vault_config_file_path):
-            existing_content = unit_file_directory.pull(file_path=vault_config_file_path)
+        if unit_file_directory.exists(path=vault_config_file_path):
+            existing_content = unit_file_directory.pull(path=vault_config_file_path)
 
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
             unit_file_directory.push(
-                parent_dir=VAULT_CONFIG_PATH,
-                file_name=VAULT_CONFIG_FILE_NAME,
-                content=content,
+                path=vault_config_file_path,
+                source=content,
             )
 
     @property
