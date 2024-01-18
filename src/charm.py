@@ -140,7 +140,7 @@ class VaultOperatorCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.unit_file_directory = Machine()
+        self.machine = Machine()
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
@@ -193,11 +193,11 @@ class VaultOperatorCharm(CharmBase):
         )
         existing_content = ""
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
-        if self.unit_file_directory.exists(path=vault_config_file_path):
-            existing_content = self.unit_file_directory.pull(path=vault_config_file_path)
+        if self.machine.exists(path=vault_config_file_path):
+            existing_content = self.machine.pull(path=vault_config_file_path)
 
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
-            self.unit_file_directory.push(
+            self.machine.push(
                 path=vault_config_file_path,
                 source=content,
             )
