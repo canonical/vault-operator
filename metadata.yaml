@@ -17,6 +17,7 @@ description: |
 website: https://charmhub.io/vault-dev
 source: https://github.com/canonical/vault-operator
 issues: https://github.com/canonical/vault-operator/issues
+docs: https://discourse.charmhub.io/t/vault-operator-machine/12983
 
 assumes:
   - juju >= 3.1
