@@ -1,8 +1,8 @@
 ui      = true
 storage "raft" {
   path= "/var/snap/vault/common/raft"
-  node_id = "whatever-vault/0"
-}
+  node_id = "whatever-vault-dev/0"
+  }
 listener "tcp" {
   telemetry {
     unauthenticated_metrics_access = true
