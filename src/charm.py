@@ -55,8 +55,8 @@ def render_vault_config_file(
     return content
 
 
-class UnitFileDirectory:
-    """A class to interact with a unit file directory.
+class Machine:
+    """A class to interact with a unit machine.
 
     This class has the same method signatures as Pebble API in the Ops
     Library. This is to improve consistency between the Machine and Kubernetes
@@ -84,8 +84,7 @@ class UnitFileDirectory:
             str: The content of the file
         """
         with open(path, "r") as read_file:
-            content = read_file.read()
-        return content
+            return read_file.read()
 
     def push(self, path: str, source: str) -> None:
         """Pushes a file to the unit.
@@ -96,7 +95,7 @@ class UnitFileDirectory:
         """
         with open(path, "w") as write_file:
             write_file.write(source)
-        logger.info("Pushed file %s", path)
+            logger.info("Pushed file %s", path)
 
 
 def config_file_content_matches(existing_content: str, new_content: str) -> bool:
@@ -137,17 +136,22 @@ def config_file_content_matches(existing_content: str, new_content: str) -> bool
 
 
 class VaultOperatorCharm(CharmBase):
-    """Charm the service."""
+    """Machine Charm for Vault."""
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.unit_file_directory = UnitFileDirectory()
+        self.unit_file_directory = Machine()
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
 
     def _configure(self, _):
-        """Handle Vault installation."""
+        """Handle Vault installation.
+
+        This includes:
+          - Installing the Vault snap
+          - Generating the Vault config file
+        """
         if not self._bind_address:
             self.unit.status = WaitingStatus("Waiting for bind address")
             return
@@ -171,7 +175,7 @@ class VaultOperatorCharm(CharmBase):
             raise
 
     def _generate_vault_config_file(self) -> None:
-        """Handle the creation of the Vault config file."""
+        """Create the Vault config file and push it to the Machine."""
         if not self._cluster_address:
             logger.warning("Cluster address not found")
             return
@@ -218,7 +222,7 @@ class VaultOperatorCharm(CharmBase):
 
     @property
     def _api_address(self) -> Optional[str]:
-        """Returns the FQDN with the https schema and vault port.
+        """Returns the IP with the https schema and vault port.
 
         Example: "https://1.2.3.4:8200"
         """
@@ -228,7 +232,7 @@ class VaultOperatorCharm(CharmBase):
 
     @property
     def _cluster_address(self) -> Optional[str]:
-        """Return the FQDN with the https schema and vault port.
+        """Return the IP with the https schema and vault port.
 
         Example: "https://1.2.3.4:8201"
         """
@@ -240,7 +244,7 @@ class VaultOperatorCharm(CharmBase):
     def _node_id(self) -> str:
         """Return node id for vault.
 
-        Example of node id: "vault-k8s-0"
+        Example of node id: "vault-0"
         """
         return f"{self.model.name}-{self.unit.name}"
 

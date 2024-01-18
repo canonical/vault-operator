@@ -2,6 +2,7 @@ black
 codespell
 coverage[toml]
 ops
+pyhcl
 pyright
 pytest
 ruff
