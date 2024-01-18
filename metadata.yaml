@@ -1,4 +1,4 @@
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 name: vault
@@ -20,3 +20,15 @@ issues: https://github.com/canonical/vault-operator/issues
 
 assumes:
   - juju >= 3.1
+
+storage:
+  vault-raft:
+    type: filesystem
+    location: /var/snap/vault/common/raft
+  config:
+    type: filesystem
+    location: /var/snap/vault/common/config
+
+peers:
+  vault-peers:
+    interface: vault-peer

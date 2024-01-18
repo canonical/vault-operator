@@ -1,0 +1,20 @@
+ui      = true
+storage "raft" {
+  path= "{{ raft_storage_path }}"
+  node_id = "{{ node_id }}"
+  }
+listener "tcp" {
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
+  address       = "{{ tcp_address }}"
+}
+default_lease_ttl = "{{ default_lease_ttl }}"
+max_lease_ttl     = "{{ max_lease_ttl }}"
+disable_mlock     = true
+cluster_addr      = "{{ cluster_address }}"
+api_addr          = "{{ api_address }}"
+telemetry {
+  disable_hostname = true
+  prometheus_retention_time = "12h"
+}
