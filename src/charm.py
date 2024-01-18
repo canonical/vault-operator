@@ -156,6 +156,9 @@ class VaultOperatorCharm(CharmBase):
           - Installing the Vault snap
           - Generating the Vault config file
         """
+        if not self._is_peer_relation_created():
+            self.unit.status = WaitingStatus("Waiting for peer relation")
+            return
         if not self._bind_address:
             self.unit.status = WaitingStatus("Waiting for bind address")
             return
@@ -216,6 +219,10 @@ class VaultOperatorCharm(CharmBase):
                 path=vault_config_file_path,
                 source=content,
             )
+
+    def _is_peer_relation_created(self) -> bool:
+        """Check if the peer relation is created."""
+        return bool(self.model.get_relation(PEER_RELATION_NAME))
 
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""
