@@ -16,6 +16,14 @@ jobs:
 
   unit-tests-with-coverage:
     uses: ./.github/workflows/unit-test.yaml
+  
+  integration-tests:
+    needs:
+      - lint-report
+      - static-analysis
+      - unit-tests-with-coverage
+    uses: ./.github/workflows/integration-tests.yaml
+    secrets: inherit
 
   publish-charm:
     needs:
