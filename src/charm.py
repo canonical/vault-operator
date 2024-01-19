@@ -7,7 +7,7 @@
 
 import logging
 import os
-from typing import Optional
+from typing import Dict, List, Optional
 
 import hcl  # type: ignore[import-untyped]
 from charms.operator_libs_linux.v1 import snap
@@ -39,6 +39,7 @@ def render_vault_config_file(
     tcp_address: str,
     raft_storage_path: str,
     node_id: str,
+    retry_joins: List[Dict[str, str]],
 ) -> str:
     """Render the Vault config file."""
     jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR_PATH))
@@ -51,6 +52,7 @@ def render_vault_config_file(
         tcp_address=tcp_address,
         raft_storage_path=raft_storage_path,
         node_id=node_id,
+        retry_joins=retry_joins,
     )
     return content
 
@@ -144,6 +146,8 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
+        self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
+        self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
 
     def _configure(self, _):
         """Handle Vault installation.
@@ -152,12 +156,19 @@ class VaultOperatorCharm(CharmBase):
           - Installing the Vault snap
           - Generating the Vault config file
         """
+        if not self._is_peer_relation_created():
+            self.unit.status = WaitingStatus("Waiting for peer relation")
+            return
         if not self._bind_address:
             self.unit.status = WaitingStatus("Waiting for bind address")
+            return
+        if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
+            self.unit.status = WaitingStatus("Waiting for other units to provide their addresses")
             return
         self.unit.status = MaintenanceStatus("Installing Vault")
         self._install_vault_snap()
         self._generate_vault_config_file()
+        self._set_peer_relation_node_api_address()
         self.unit.status = ActiveStatus()
 
     def _install_vault_snap(self) -> None:
@@ -172,16 +183,18 @@ class VaultOperatorCharm(CharmBase):
 
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
-            raise
+            raise e
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
-        if not self._cluster_address:
-            logger.warning("Cluster address not found")
-            return
-        if not self._api_address:
-            logger.warning("API address not found")
-            return
+        assert self._cluster_address
+        assert self._api_address
+        retry_joins = [
+            {
+                "leader_api_addr": node_api_address,
+            }
+            for node_api_address in self._other_peer_node_api_addresses()
+        ]
         content = render_vault_config_file(
             default_lease_ttl=self.model.config["default_lease_ttl"],
             max_lease_ttl=self.model.config["max_lease_ttl"],
@@ -190,6 +203,7 @@ class VaultOperatorCharm(CharmBase):
             tcp_address=f"[::]:{VAULT_PORT}",
             raft_storage_path=VAULT_STORAGE_PATH,
             node_id=self._node_id,
+            retry_joins=retry_joins,
         )
         existing_content = ""
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
@@ -201,6 +215,39 @@ class VaultOperatorCharm(CharmBase):
                 path=vault_config_file_path,
                 source=content,
             )
+
+    def _is_peer_relation_created(self) -> bool:
+        """Check if the peer relation is created."""
+        return bool(self.model.get_relation(PEER_RELATION_NAME))
+
+    def _set_peer_relation_node_api_address(self) -> None:
+        """Set the unit address in the peer relation."""
+        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
+        assert peer_relation
+        assert self._api_address
+        peer_relation.data[self.unit].update({"node_api_address": self._api_address})
+
+    def _get_peer_relation_node_api_addresses(self) -> List[str]:
+        """Return the list of peer unit addresses."""
+        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
+        node_api_addresses = []
+        if not peer_relation:
+            return []
+        for peer in peer_relation.units:
+            if "node_api_address" in peer_relation.data[peer]:
+                node_api_addresses.append(peer_relation.data[peer]["node_api_address"])
+        return node_api_addresses
+
+    def _other_peer_node_api_addresses(self) -> List[str]:
+        """Return the list of other peer unit addresses.
+
+        We exclude our own unit address from the list.
+        """
+        return [
+            node_api_address
+            for node_api_address in self._get_peer_relation_node_api_addresses()
+            if node_api_address != self._api_address
+        ]
 
     @property
     def _bind_address(self) -> Optional[str]:
