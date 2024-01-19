@@ -23,6 +23,8 @@ jobs:
       - static-analysis
       - unit-tests-with-coverage
     uses: ./.github/workflows/integration-tests.yaml
+    with:
+      charm-file-name: "vault-dev_ubuntu-22.04-amd64.charm"
     secrets: inherit
 
   publish-charm:
@@ -30,6 +32,8 @@ jobs:
       - lint-report
       - static-analysis
       - unit-tests-with-coverage
-    if: ${{ github.ref_name == 'main' }}
+    # if: ${{ github.ref_name == 'main' }}
     uses: ./.github/workflows/publish-charm.yaml
+    with:
+      charm-file-name: "vault-dev_ubuntu-22.04-amd64.charm"
     secrets: inherit

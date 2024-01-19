@@ -2,6 +2,11 @@ name: Integration Tests
 
 on:
   workflow_call:
+    inputs:
+        charm-file-name:
+          description: Tested charm file name
+          required: true
+          type: string
 
 jobs:
   integration-tests:
@@ -20,3 +25,11 @@ jobs:
 
       - name: Run integration tests
         run: tox -e integration
+
+      - name: Archive Tested Charm
+        uses: actions/upload-artifact@v4
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          name: tested-charm
+          path: .tox/**/${{ inputs.charm-file-name }}
+          retention-days: 5
