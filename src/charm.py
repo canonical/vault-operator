@@ -183,16 +183,12 @@ class VaultOperatorCharm(CharmBase):
 
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
-            raise
+            raise e
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
-        if not self._cluster_address:
-            logger.warning("Cluster address not found")
-            return
-        if not self._api_address:
-            logger.warning("API address not found")
-            return
+        assert self._cluster_address
+        assert self._api_address
         retry_joins = [
             {
                 "leader_api_addr": node_api_address,
@@ -227,10 +223,8 @@ class VaultOperatorCharm(CharmBase):
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""
         peer_relation = self.model.get_relation(PEER_RELATION_NAME)
-        if not peer_relation:
-            raise RuntimeError("Peer relation not created")
-        if not self._api_address:
-            raise RuntimeError("API address not found")
+        assert peer_relation
+        assert self._api_address
         peer_relation.data[self.unit].update({"node_api_address": self._api_address})
 
     def _get_peer_relation_node_api_addresses(self) -> List[str]:
