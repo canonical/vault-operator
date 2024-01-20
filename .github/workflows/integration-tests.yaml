@@ -1,0 +1,35 @@
+name: Integration Tests
+
+on:
+  workflow_call:
+    inputs:
+        charm-file-name:
+          description: Tested charm file name
+          required: true
+          type: string
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+    
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          juju-channel: 3.1/stable
+          provider: lxd
+
+      - name: Install tox
+        run: pip install tox
+
+      - name: Run integration tests
+        run: tox -e integration
+
+      - name: Archive Tested Charm
+        uses: actions/upload-artifact@v4
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          name: tested-charm
+          path: .tox/**/${{ inputs.charm-file-name }}
+          retention-days: 5
