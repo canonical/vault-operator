@@ -6,12 +6,12 @@
 """A machine charm for Vault."""
 
 import logging
-import os
 from typing import Dict, List, Optional
 
 import hcl  # type: ignore[import-untyped]
 from charms.operator_libs_linux.v1 import snap
 from jinja2 import Environment, FileSystemLoader
+from machine import Machine
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
@@ -55,49 +55,6 @@ def render_vault_config_file(
         retry_joins=retry_joins,
     )
     return content
-
-
-class Machine:
-    """A class to interact with a unit machine.
-
-    This class has the same method signatures as Pebble API in the Ops
-    Library. This is to improve consistency between the Machine and Kubernetes
-    versions of the charm.
-    """
-
-    def exists(self, path: str) -> bool:
-        """Check if a file exists.
-
-        Args:
-            path: The path of the file
-
-        Returns:
-            bool: Whether the file exists
-        """
-        return os.path.isfile(path)
-
-    def pull(self, path: str) -> str:
-        """Get the content of a file.
-
-        Args:
-            path: The path of the file
-
-        Returns:
-            str: The content of the file
-        """
-        with open(path, "r") as read_file:
-            return read_file.read()
-
-    def push(self, path: str, source: str) -> None:
-        """Pushes a file to the unit.
-
-        Args:
-            path: The path of the file
-            source: The contents of the file to be pushed
-        """
-        with open(path, "w") as write_file:
-            write_file.write(source)
-            logger.info("Pushed file %s", path)
 
 
 def config_file_content_matches(existing_content: str, new_content: str) -> bool:
