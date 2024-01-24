@@ -7,4 +7,4 @@ pyright
 pytest
 pytest-operator
 ruff
-pydantic
+pydantic<2
