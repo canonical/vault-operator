@@ -33,3 +33,7 @@ storage:
 peers:
   vault-peers:
     interface: vault-peer
+
+provides:
+  cos-agent:
+    interface: cos_agent
