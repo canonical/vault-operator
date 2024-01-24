@@ -29,20 +29,22 @@ async def build_and_deploy(ops_test: OpsTest):
         trust=True,
     )
 
-    pytest.mark.abort_on_fail
-    @pytest.fixture(scope="module")
-    async def deploy_grafana_agent(ops_test: OpsTest) -> None:
-        """Deploys grafana-agent-operator.
 
-        Args:
-            ops_test: Ops test Framework.
-        """
-        assert ops_test.model
-        await ops_test.model.deploy(
-            GRAFANA_AGENT_APPLICATION_NAME,
-            application_name=GRAFANA_AGENT_APPLICATION_NAME,
-            trust=True,
-        )
+@pytest.mark.abort_on_fail
+@pytest.fixture(scope="module")
+async def deploy_grafana_agent(ops_test: OpsTest) -> None:
+    """Deploys grafana-agent-operator.
+
+    Args:
+        ops_test: Ops test Framework.
+    """
+    assert ops_test.model
+    await ops_test.model.deploy(
+        GRAFANA_AGENT_APPLICATION_NAME,
+        application_name=GRAFANA_AGENT_APPLICATION_NAME,
+        trust=True,
+    )
+
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_active(
