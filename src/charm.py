@@ -9,6 +9,7 @@ import logging
 from typing import Dict, List, Optional
 
 import hcl  # type: ignore[import-untyped]
+from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v1 import snap
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
@@ -100,6 +101,17 @@ class VaultOperatorCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
         self.machine = Machine()
+        self._cos_agent = COSAgentProvider(
+            self,
+            scrape_configs=[
+                {
+                    "scheme": "https",
+                    "tls_config": {"insecure_skip_verify": True},
+                    "metrics_path": "/v1/sys/metrics",
+                    "static_configs": [{"targets": [f"*:{VAULT_PORT}"]}],
+                }
+            ],
+        )
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
