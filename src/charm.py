@@ -27,8 +27,8 @@ VAULT_CONFIG_FILE_NAME = "vault.hcl"
 VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
 VAULT_SNAP_NAME = "vault"
-VAULT_SNAP_CHANNEL = "1.12/stable"
-VAULT_SNAP_REVISION = 2166
+VAULT_SNAP_CHANNEL = "latest/edge"
+VAULT_SNAP_REVISION = 2177
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 
 
@@ -137,6 +137,7 @@ class VaultOperatorCharm(CharmBase):
         self.unit.status = MaintenanceStatus("Installing Vault")
         self._install_vault_snap()
         self._generate_vault_config_file()
+        self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self.unit.status = ActiveStatus()
 
@@ -149,10 +150,17 @@ class VaultOperatorCharm(CharmBase):
                 snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
             )
             vault_snap.hold()
-
+            logger.info("Vault snap installed")
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
+
+    def _start_vault_service(self) -> None:
+        """Start the Vault service."""
+        snap_cache = snap.SnapCache()
+        vault_snap = snap_cache[VAULT_SNAP_NAME]
+        vault_snap.start(services=["vaultd"])
+        logger.info("Vault service started")
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
