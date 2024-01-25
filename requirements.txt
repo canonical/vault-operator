@@ -2,5 +2,5 @@ jinja2
 ops
 pyhcl
 # cos-agent requires pydantic<2
-pydantic<2
+pydantic<3
 cosl
