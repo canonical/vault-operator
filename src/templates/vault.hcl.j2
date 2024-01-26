@@ -13,6 +13,7 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "{{ tcp_address }}"
+  tls_disable = 1
 }
 default_lease_ttl = "{{ default_lease_ttl }}"
 max_lease_ttl     = "{{ max_lease_ttl }}"

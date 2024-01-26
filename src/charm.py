@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
 PEER_RELATION_NAME = "vault-peers"
-VAULT_CONFIG_PATH = "/var/snap/vault/common/config"
+VAULT_CONFIG_PATH = "/var/snap/vault/common"
 VAULT_CONFIG_FILE_NAME = "vault.hcl"
 VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
 VAULT_SNAP_NAME = "vault"
-VAULT_SNAP_CHANNEL = "1.12/stable"
-VAULT_SNAP_REVISION = 2166
+VAULT_SNAP_CHANNEL = "latest/edge"
+VAULT_SNAP_REVISION = 2177
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 
 
@@ -77,7 +77,11 @@ def config_file_content_matches(existing_content: str, new_content: str) -> bool
         return existing_config_hcl == new_content_hcl
 
     new_retry_joins = new_content_hcl["storage"]["raft"].pop("retry_join", [])
-    existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
+
+    try:
+        existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
+    except KeyError:
+        existing_retry_joins = []
 
     # If there is only one retry join, it is a dict
     if isinstance(new_retry_joins, dict):
@@ -105,7 +109,7 @@ class VaultOperatorCharm(CharmBase):
             self,
             scrape_configs=[
                 {
-                    "scheme": "https",
+                    "scheme": "http",
                     "tls_config": {"insecure_skip_verify": True},
                     "metrics_path": "/v1/sys/metrics",
                     "static_configs": [{"targets": [f"*:{VAULT_PORT}"]}],
@@ -136,7 +140,9 @@ class VaultOperatorCharm(CharmBase):
             return
         self.unit.status = MaintenanceStatus("Installing Vault")
         self._install_vault_snap()
+        self._create_backend_directory()
         self._generate_vault_config_file()
+        self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self.unit.status = ActiveStatus()
 
@@ -149,10 +155,20 @@ class VaultOperatorCharm(CharmBase):
                 snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
             )
             vault_snap.hold()
-
+            logger.info("Vault snap installed")
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
+
+    def _create_backend_directory(self) -> None:
+        self.machine.make_dir(path=VAULT_STORAGE_PATH)
+
+    def _start_vault_service(self) -> None:
+        """Start the Vault service."""
+        snap_cache = snap.SnapCache()
+        vault_snap = snap_cache[VAULT_SNAP_NAME]
+        vault_snap.start(services=["vaultd"])
+        logger.info("Vault service started")
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
@@ -238,23 +254,23 @@ class VaultOperatorCharm(CharmBase):
 
     @property
     def _api_address(self) -> Optional[str]:
-        """Returns the IP with the https schema and vault port.
+        """Returns the IP with the http schema and vault port.
 
-        Example: "https://1.2.3.4:8200"
+        Example: "http://1.2.3.4:8200"
         """
         if not self._bind_address:
             return None
-        return f"https://{self._bind_address}:{VAULT_PORT}"
+        return f"http://{self._bind_address}:{VAULT_PORT}"
 
     @property
     def _cluster_address(self) -> Optional[str]:
-        """Return the IP with the https schema and vault port.
+        """Return the IP with the http schema and vault port.
 
-        Example: "https://1.2.3.4:8201"
+        Example: "http://1.2.3.4:8201"
         """
         if not self._bind_address:
             return None
-        return f"https://{self._bind_address}:{VAULT_CLUSTER_PORT}"
+        return f"http://{self._bind_address}:{VAULT_CLUSTER_PORT}"
 
     @property
     def _node_id(self) -> str:

@@ -8,12 +8,13 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "[::]:8200"
+  tls_disable = 1
 }
 default_lease_ttl = "168h"
 max_lease_ttl     = "720h"
 disable_mlock     = true
-cluster_addr      = "https://1.2.1.2:8201"
-api_addr          = "https://1.2.1.2:8200"
+cluster_addr      = "http://1.2.1.2:8201"
+api_addr          = "http://1.2.1.2:8200"
 telemetry {
   disable_hostname = true
   prometheus_retention_time = "12h"

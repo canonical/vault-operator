@@ -7,6 +7,7 @@
 
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -52,3 +53,7 @@ class Machine:
         with open(path, "w") as write_file:
             write_file.write(source)
             logger.info("Pushed file %s", path)
+
+    def make_dir(self, path: str) -> None:
+        """Create a directory."""
+        Path(path).mkdir(parents=True, exist_ok=True)

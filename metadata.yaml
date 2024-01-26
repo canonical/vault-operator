@@ -3,7 +3,7 @@
 
 name: vault-dev
 
-display-name: Vault Operator
+display-name: Vault
 summary: A tool for managing secrets
 description: |
   Vault secures, stores, and tightly controls access to
@@ -23,12 +23,9 @@ assumes:
   - juju >= 3.1
 
 storage:
-  vault-raft:
+  vault:
     type: filesystem
-    location: /var/snap/vault/common/raft
-  config:
-    type: filesystem
-    location: /var/snap/vault/common/config
+    location: /var/snap/vault/common
 
 peers:
   vault-peers:
