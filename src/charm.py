@@ -109,7 +109,7 @@ class VaultOperatorCharm(CharmBase):
             self,
             scrape_configs=[
                 {
-                    "scheme": "https",
+                    "scheme": "http",
                     "tls_config": {"insecure_skip_verify": True},
                     "metrics_path": "/v1/sys/metrics",
                     "static_configs": [{"targets": [f"*:{VAULT_PORT}"]}],
@@ -254,23 +254,23 @@ class VaultOperatorCharm(CharmBase):
 
     @property
     def _api_address(self) -> Optional[str]:
-        """Returns the IP with the https schema and vault port.
+        """Returns the IP with the http schema and vault port.
 
-        Example: "https://1.2.3.4:8200"
+        Example: "http://1.2.3.4:8200"
         """
         if not self._bind_address:
             return None
-        return f"https://{self._bind_address}:{VAULT_PORT}"
+        return f"http://{self._bind_address}:{VAULT_PORT}"
 
     @property
     def _cluster_address(self) -> Optional[str]:
-        """Return the IP with the https schema and vault port.
+        """Return the IP with the http schema and vault port.
 
-        Example: "https://1.2.3.4:8201"
+        Example: "http://1.2.3.4:8201"
         """
         if not self._bind_address:
             return None
-        return f"https://{self._bind_address}:{VAULT_CLUSTER_PORT}"
+        return f"http://{self._bind_address}:{VAULT_CLUSTER_PORT}"
 
     @property
     def _node_id(self) -> str:
