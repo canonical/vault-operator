@@ -8,6 +8,7 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "[::]:8200"
+  tls_disable = 1
 }
 default_lease_ttl = "168h"
 max_lease_ttl     = "720h"

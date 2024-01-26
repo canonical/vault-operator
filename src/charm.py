@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
 PEER_RELATION_NAME = "vault-peers"
-VAULT_CONFIG_PATH = "/var/snap/vault/common/config"
+VAULT_CONFIG_PATH = "/var/snap/vault/common"
 VAULT_CONFIG_FILE_NAME = "vault.hcl"
 VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
@@ -77,7 +77,11 @@ def config_file_content_matches(existing_content: str, new_content: str) -> bool
         return existing_config_hcl == new_content_hcl
 
     new_retry_joins = new_content_hcl["storage"]["raft"].pop("retry_join", [])
-    existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
+
+    try:
+        existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
+    except KeyError:
+        existing_retry_joins = []
 
     # If there is only one retry join, it is a dict
     if isinstance(new_retry_joins, dict):
@@ -136,6 +140,7 @@ class VaultOperatorCharm(CharmBase):
             return
         self.unit.status = MaintenanceStatus("Installing Vault")
         self._install_vault_snap()
+        self._create_backend_directory()
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
@@ -154,6 +159,9 @@ class VaultOperatorCharm(CharmBase):
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
+
+    def _create_backend_directory(self) -> None:
+        self.machine.make_dir(path=VAULT_STORAGE_PATH)
 
     def _start_vault_service(self) -> None:
         """Start the Vault service."""

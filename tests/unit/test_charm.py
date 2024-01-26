@@ -59,6 +59,9 @@ class MockMachine:
     def pull(self, path: str) -> str:
         pass
 
+    def make_dir(self, path: str) -> None:
+        pass
+
 
 def read_file(path: str) -> str:
     """Read a file and returns as a string.
@@ -164,9 +167,7 @@ class TestCharm(unittest.TestCase):
         self.harness.charm.on.install.emit()
 
         assert self.mock_machine.push_called
-        assert (
-            self.mock_machine.push_called_with["path"] == "/var/snap/vault/common/config/vault.hcl"
-        )
+        assert self.mock_machine.push_called_with["path"] == "/var/snap/vault/common/vault.hcl"
         pushed_content_hcl = hcl.loads(self.mock_machine.push_called_with["source"])
         self.assertEqual(pushed_content_hcl, expected_content_hcl)
 
