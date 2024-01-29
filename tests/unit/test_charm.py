@@ -151,7 +151,7 @@ class TestCharm(unittest.TestCase):
 
         mock_snap_cache.assert_called_with()
         assert vault_snap.ensure_called
-        assert vault_snap.ensure_called_with == (SnapState.Latest, "latest/edge", 2177)
+        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.15/beta", 2181)
         assert vault_snap.hold_called
 
     @patch("ops.model.Model.get_binding")
