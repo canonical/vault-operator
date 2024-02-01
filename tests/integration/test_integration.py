@@ -91,12 +91,12 @@ async def test_given_charm_deployed_and_active_when_vault_status_checked_then_va
     vault_endpoint = f"http://{unit_ip}:8200"
     # TODO: Use certs in "verify" when added in charm.
     client = hvac.Client(url=vault_endpoint, verify=False)
-    # TODO: remove uninit_code=200 when charm initializes vault.
-    response = client.sys.read_health_status(uninit_code=200)
+    response = client.sys.read_health_status()
     # We accept both 200 and 429 because based on Vault's documentation:
     # 200: {{Description: "initialized, unsealed, and active"}}
     # 429: {{Description: "unsealed and standby"}}
     # 472: {{Description: "data recovery mode replication secondary and active"}}
     # 501: {{Description: "not initialized"}}
     # 503: {{Description: "sealed"}}
-    assert str(response) == "<Response [200]>" or "<Response [429]>"
+    # TODO: remove 501 when charm initializes vault.
+    assert response.status_code in (200, 429, 501)
