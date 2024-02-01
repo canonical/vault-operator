@@ -1,6 +1,12 @@
+cosl
 jinja2
 ops
 pyhcl
-# cos-agent requires pydantic<2
+
+# Downstream requirements
+
+# vault_client requirements
+hvac
+
+# cos-agent requirements
 pydantic<2
-cosl
