@@ -9,7 +9,7 @@ import hcl
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
-from charms.operator_libs_linux.v1.snap import SnapState
+from charms.operator_libs_linux.v2.snap import SnapState
 
 PEER_RELATION_NAME = "vault-peers"
 
@@ -50,7 +50,6 @@ class MockMachine:
 
     def exists(self, path: str) -> bool:
         return self.exists_return_value
-        pass
 
     def push(self, path: str, source: str) -> None:
         self.push_called = True
@@ -136,7 +135,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v1.snap.SnapCache")
+    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
         self, mock_snap_cache, patch_get_binding
     ):
@@ -151,11 +150,11 @@ class TestCharm(unittest.TestCase):
 
         mock_snap_cache.assert_called_with()
         assert vault_snap.ensure_called
-        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.15/beta", 2181)
+        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.15/beta", "2181")
         assert vault_snap.hold_called
 
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v1.snap.SnapCache")
+    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
         self, _, patch_get_binding
     ):
@@ -200,7 +199,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v1.snap.SnapCache")
+    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_when_configure_then_service_started(self, mock_snap_cache, patch_get_binding):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         vault_snap = MockSnapObject("vault")
@@ -224,7 +223,7 @@ class TestCharm(unittest.TestCase):
         assert vault_snap.start_called_with == {"enable": False, "services": ["vaultd"]}
 
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v1.snap.SnapCache")
+    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_unit_not_leader_and_peer_addresses_available_when_configure_then_status_is_active(
         self, _, patch_get_binding
     ):

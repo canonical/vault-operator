@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 import hcl  # type: ignore[import-untyped]
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
-from charms.operator_libs_linux.v1 import snap
+from charms.operator_libs_linux.v2 import snap
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
 from ops.charm import CharmBase
@@ -28,7 +28,7 @@ VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
-VAULT_SNAP_REVISION = 2181
+VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 
 
