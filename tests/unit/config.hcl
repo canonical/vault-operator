@@ -8,7 +8,8 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "[::]:8200"
-  tls_disable = 1
+  tls_cert_file: "/var/snap/vault/common/certs/cert.pem"
+  tls_key_file: "/var/snap/vault/common/certs/key.pem"
 }
 default_lease_ttl = "168h"
 max_lease_ttl     = "720h"

@@ -4,3 +4,5 @@ pyhcl
 # cos-agent requires pydantic<2
 pydantic<2
 cosl
+cryptography
+jsonschema

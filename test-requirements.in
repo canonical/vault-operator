@@ -5,3 +5,16 @@ pyright
 pytest
 pytest-operator
 ruff
+mypy
+types-PyYAML
+flake8
+flake8-docstrings
+flake8-copyright
+flake8-builtins
+isort
+juju
+pep8-naming
+pyproject-flake8
+types-setuptools
+types-toml
+types-requests

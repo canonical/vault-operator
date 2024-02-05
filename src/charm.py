@@ -6,16 +6,27 @@
 """A machine charm for Vault."""
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import hcl  # type: ignore[import-untyped]
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v1 import snap
+from charms.tls_certificates_interface.v3.tls_certificates import (
+    generate_ca,
+    generate_private_key,
+    generate_csr,
+    generate_certificate,
+)
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
+from ops.model import (
+    ActiveStatus,
+    ModelError,
+    SecretNotFoundError,
+    WaitingStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +41,60 @@ VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
 VAULT_SNAP_REVISION = 2181
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
+TLS_DIR_PATH = "/var/snap/vault/common/certs"
+TLS_CERT_FILE_PATH = "/var/snap/vault/common/certs/cert.pem"
+TLS_KEY_FILE_PATH = "/var/snap/vault/common/certs/key.pem"
+TLS_CA_FILE_PATH = "/var/snap/vault/common/certs/ca.pem"
+CA_CERTIFICATE_JUJU_SECRET_LABEL = "vault-ca-certificate"
+VAULT_CA_SUBJECT = "Vault self signed CA"
+
+
+def generate_vault_ca_certificate() -> Tuple[str, str]:
+    """Generate Vault CA certificates valid for 50 years.
+
+    Returns:
+        Tuple[str, str]: CA Private key, CA certificate
+    """
+    ca_private_key = generate_private_key()
+    ca_certificate = generate_ca(
+        private_key=ca_private_key,
+        subject=VAULT_CA_SUBJECT,
+        validity=365 * 50,
+    )
+
+    return ca_private_key.decode(), ca_certificate.decode()
+
+
+def generate_vault_unit_certificate(
+    subject: str,
+    sans_ip: List[str],
+    sans_dns: List[str],
+    ca_certificate: bytes,
+    ca_private_key: bytes,
+) -> Tuple[str, str]:
+    """Generate Vault unit certificates valid for 50 years.
+
+    Args:
+        subject: Subject of the certificate
+        sans_ip: List of IP addresses to add to the SAN
+        sans_dns: List of DNS subject alternative names
+        ca_certificate: CA certificate
+        ca_private_key: CA private key
+
+    Returns:
+        Tuple[str, str]: Unit private key, Unit certificate
+    """
+    vault_private_key = generate_private_key()
+    csr = generate_csr(
+        private_key=vault_private_key, subject=subject, sans_ip=sans_ip, sans_dns=sans_dns
+    )
+    vault_certificate = generate_certificate(
+        ca=ca_certificate,
+        ca_key=ca_private_key,
+        csr=csr,
+        validity=365 * 50,
+    )
+    return vault_private_key.decode(), vault_certificate.decode()
 
 
 def render_vault_config_file(
@@ -37,6 +102,8 @@ def render_vault_config_file(
     max_lease_ttl: str,
     cluster_address: str,
     api_address: str,
+    tls_cert_file: str,
+    tls_key_file: str,
     tcp_address: str,
     raft_storage_path: str,
     node_id: str,
@@ -50,6 +117,8 @@ def render_vault_config_file(
         max_lease_ttl=max_lease_ttl,
         cluster_address=cluster_address,
         api_address=api_address,
+        tls_cert_file=tls_cert_file,
+        tls_key_file=tls_key_file,
         tcp_address=tcp_address,
         raft_storage_path=raft_storage_path,
         node_id=node_id,
@@ -99,6 +168,17 @@ def config_file_content_matches(existing_content: str, new_content: str) -> bool
     )
 
 
+class PeerSecretError(Exception):
+    """Exception raised when a peer secret is not found."""
+
+    def __init__(
+        self, secret_name: str, message: str = "Could not retrieve secret from peer relation"
+    ):
+        self.secret_name = secret_name
+        self.message = message
+        super().__init__(self.message)
+
+
 class VaultOperatorCharm(CharmBase):
     """Machine Charm for Vault."""
 
@@ -138,9 +218,15 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
             self.unit.status = WaitingStatus("Waiting for other units to provide their addresses")
             return
-        self.unit.status = MaintenanceStatus("Installing Vault")
+        if not self.unit.is_leader() and not self._ca_certificate_secret_is_set():
+            self.unit.status = WaitingStatus(
+                "Waiting for CA certificate to be set in peer relation"
+            )
+            return
         self._install_vault_snap()
         self._create_backend_directory()
+        self._create_certs_directory()
+        self._configure_certificates()
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
@@ -160,8 +246,31 @@ class VaultOperatorCharm(CharmBase):
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
 
+    def _configure_certificates(self) -> None:
+        if not self._ca_certificate_secret_is_set() and self.unit.is_leader():
+            ca_private_key, ca_certificate = generate_vault_ca_certificate()
+            self._set_ca_certificate_secret(private_key=ca_private_key, certificate=ca_certificate)
+            self._push_ca_certificate_to_workload(certificate=ca_certificate)
+        else:
+            ca_private_key, ca_certificate = self._get_ca_certificate_secret()
+        if not self._unit_certificate_pushed_to_workload():
+            sans_ip = [self._bind_address]
+            private_key, certificate = generate_vault_unit_certificate(
+                subject=self._bind_address,  # type: ignore[arg-type]
+                sans_ip=sans_ip,  # type: ignore[arg-type]
+                sans_dns=[self._bind_address],  # type: ignore[list-item]
+                ca_certificate=ca_certificate.encode(),
+                ca_private_key=ca_private_key.encode(),
+            )
+            self._push_unit_certificate_to_workload(
+                certificate=certificate, private_key=private_key
+            )
+
     def _create_backend_directory(self) -> None:
         self.machine.make_dir(path=VAULT_STORAGE_PATH)
+
+    def _create_certs_directory(self) -> None:
+        self.machine.make_dir(path=TLS_DIR_PATH)
 
     def _start_vault_service(self) -> None:
         """Start the Vault service."""
@@ -185,6 +294,8 @@ class VaultOperatorCharm(CharmBase):
             max_lease_ttl=self.model.config["max_lease_ttl"],
             cluster_address=self._cluster_address,
             api_address=self._api_address,
+            tls_cert_file=TLS_CERT_FILE_PATH,
+            tls_key_file=TLS_KEY_FILE_PATH,
             tcp_address=f"[::]:{VAULT_PORT}",
             raft_storage_path=VAULT_STORAGE_PATH,
             node_id=self._node_id,
@@ -233,6 +344,77 @@ class VaultOperatorCharm(CharmBase):
             for node_api_address in self._get_peer_relation_node_api_addresses()
             if node_api_address != self._api_address
         ]
+
+    def _get_ca_certificate_secret(self) -> Tuple[str, str]:
+        """Get the vault CA certificate secret.
+
+        Returns:
+            Tuple[Optional[str], Optional[str]]: The CA private key and certificate
+        """
+        try:
+            juju_secret = self.model.get_secret(label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
+            content = juju_secret.get_content()
+            return content["privatekey"], content["certificate"]
+        except (TypeError, SecretNotFoundError, AttributeError):
+            raise PeerSecretError(secret_name=CA_CERTIFICATE_JUJU_SECRET_LABEL)
+
+    def _ca_certificate_secret_is_set(self) -> bool:
+        """Returns whether CA certificate is stored."""
+        try:
+            ca_private_key, ca_certificate = self._get_ca_certificate_secret()
+            if ca_private_key and ca_certificate:
+                return True
+        except PeerSecretError:
+            return False
+        return False
+
+    def _set_ca_certificate_secret(
+        self,
+        private_key: str,
+        certificate: str,
+    ) -> None:
+        """Set the value of the vault CA certificate secret.
+
+        Args:
+            private_key: Private key
+            certificate: certificate
+        """
+        juju_secret_content = {
+            "privatekey": private_key,
+            "certificate": certificate,
+        }
+        self.app.add_secret(juju_secret_content, label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
+        logger.info("Vault CA certificate secret set in peer relation")
+
+    def _push_ca_certificate_to_workload(self, certificate: str) -> None:
+        """Push the CA certificate to the workload.
+
+        Args:
+            certificate: CA certificate
+        """
+        self.machine.push(path=TLS_CA_FILE_PATH, source=certificate)
+        logger.info("Pushed CA certificate to workload")
+
+    def _push_unit_certificate_to_workload(self, private_key: str, certificate: str) -> None:
+        """Push the unit certificate to the workload.
+
+        Args:
+            private_key: Private key
+            certificate: Certificate
+        """
+        self.machine.push(path=TLS_KEY_FILE_PATH, source=private_key)
+        self.machine.push(path=TLS_CERT_FILE_PATH, source=certificate)
+        logger.info("Pushed unit certificate to workload")
+
+    def _ca_certificate_pushed_to_workload(self) -> bool:
+        """Returns whether CA certificate is pushed to the workload."""
+        return self.machine.exists(path=TLS_CA_FILE_PATH)
+
+    def _unit_certificate_pushed_to_workload(self) -> bool:
+        """Returns whether unit certificate is pushed to the workload."""
+        return self.machine.exists(path=TLS_KEY_FILE_PATH) and self.machine.exists(
+            path=TLS_CERT_FILE_PATH
+        )
 
     @property
     def _bind_address(self) -> Optional[str]:

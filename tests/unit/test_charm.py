@@ -5,13 +5,14 @@ import unittest
 from typing import List, Optional
 from unittest.mock import patch
 
-import hcl
+import hcl  # type: ignore[import-untyped]
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
 from charms.operator_libs_linux.v1.snap import SnapState
 
 PEER_RELATION_NAME = "vault-peers"
+CA_CERTIFICATE_JUJU_SECRET_LABEL = "vault-ca-certificate"
 
 
 class MockSnapObject:
@@ -56,7 +57,7 @@ class MockMachine:
         self.push_called = True
         self.push_called_with = {"path": path, "source": source}
 
-    def pull(self, path: str) -> str:
+    def pull(self, path: str) -> str:  # type: ignore[empty-body]
         pass
 
     def make_dir(self, path: str) -> None:
@@ -135,12 +136,39 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
+    def _set_ca_certificate_secret(self, certificate: str, private_key: str):
+        content = {
+            "certificate": certificate,
+            "privatekey": private_key,
+        }
+        original_leader_state = self.harness.charm.unit.is_leader()
+        with self.harness.hooks_disabled():
+            self.harness.set_leader(is_leader=True)
+            secret_id = self.harness.add_model_secret(
+                owner=self.harness.charm.app.name, content=content
+            )
+            secret = self.harness.model.get_secret(id=secret_id)
+            secret.set_info(label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
+            self.harness.set_leader(original_leader_state)
+
+    @patch("charm.generate_vault_unit_certificate")
+    @patch("charm.generate_vault_ca_certificate")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
-        self, mock_snap_cache, patch_get_binding
+        self,
+        mock_snap_cache,
+        patch_get_binding,
+        patch_generate_ca_certificate,
+        patch_generate_unit_certificate,
     ):
         self.harness.set_leader(is_leader=True)
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_generate_ca_certificate.return_value = "ca private key", "ca certificate"
+        patch_generate_unit_certificate.return_value = "unit private key", "unit certificate"
         vault_snap = MockSnapObject("vault")
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
@@ -154,12 +182,24 @@ class TestCharm(unittest.TestCase):
         assert vault_snap.ensure_called_with == (SnapState.Latest, "1.15/beta", 2181)
         assert vault_snap.hold_called
 
+    @patch("charm.generate_vault_unit_certificate")
+    @patch("charm.generate_vault_ca_certificate")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
-        self, _, patch_get_binding
+        self,
+        _,
+        patch_get_binding,
+        patch_generate_ca_certificate,
+        patch_generate_unit_certificate,
     ):
         self.harness.set_leader(is_leader=True)
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_generate_ca_certificate.return_value = "ca private key", "ca certificate"
+        patch_generate_unit_certificate.return_value = "unit private key", "unit certificate"
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self._set_peer_relation()
@@ -199,14 +239,28 @@ class TestCharm(unittest.TestCase):
             "Waiting for other units to provide their addresses"
         )
 
+    @patch("charm.generate_vault_unit_certificate")
+    @patch("charm.generate_vault_ca_certificate")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
-    def test_given_when_configure_then_service_started(self, mock_snap_cache, patch_get_binding):
+    def test_given_when_configure_then_service_started(
+        self,
+        mock_snap_cache,
+        patch_get_binding,
+        patch_generate_ca_certificate,
+        patch_generate_unit_certificate,
+    ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         vault_snap = MockSnapObject("vault")
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_generate_ca_certificate.return_value = "ca private key", "ca certificate"
+        patch_generate_unit_certificate.return_value = "unit private key", "unit certificate"
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
@@ -223,14 +277,26 @@ class TestCharm(unittest.TestCase):
         assert vault_snap.start_called
         assert vault_snap.start_called_with == {"enable": False, "services": ["vaultd"]}
 
+    @patch("charm.generate_vault_unit_certificate")
+    @patch("charm.generate_vault_ca_certificate")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v1.snap.SnapCache")
     def test_given_unit_not_leader_and_peer_addresses_available_when_configure_then_status_is_active(
-        self, _, patch_get_binding
+        self,
+        _,
+        patch_get_binding,
+        patch_generate_ca_certificate,
+        patch_generate_unit_certificate,
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_generate_ca_certificate.return_value = "ca private key", "ca certificate"
+        patch_generate_unit_certificate.return_value = "unit private key", "unit certificate"
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name

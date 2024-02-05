@@ -7,6 +7,7 @@
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -57,3 +58,23 @@ class Machine:
     def make_dir(self, path: str) -> None:
         """Create a directory."""
         Path(path).mkdir(parents=True, exist_ok=True)
+
+    def remove_path(self, path: str, recursive: bool = False) -> None:
+        """Remove a file or directory.
+
+        Args:
+            path: The path of the file or directory
+            recursive: Whether to remove recursively
+        raises:
+            ValueError: If the path is not absolute.
+        """
+        if not os.path.isabs(path):
+            raise ValueError(f"The provided path is not absolute: {path}")
+        if os.path.isdir(path) and recursive:
+            shutil.rmtree(path)
+            logger.info("Recursively removed directory %s", path)
+        elif os.path.isfile(path) or (os.path.isdir(path) and not recursive):
+            os.remove(path)
+            logger.info("Removed file or directory %s", path)
+        else:
+            logger.info("No such file or directory: %s", path)
