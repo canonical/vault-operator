@@ -7,12 +7,15 @@
 
 import logging
 import os
+import shutil
+import psutil
 from pathlib import Path
+from charms.vault_k8s.v0.vault_tls import Substrate
 
 logger = logging.getLogger(__name__)
 
 
-class Machine:
+class Machine(Substrate):
     """A class to interact with a unit machine.
 
     This class has the same method signatures as Pebble API in the Ops
@@ -31,7 +34,7 @@ class Machine:
         """
         return os.path.isfile(path)
 
-    def pull(self, path: str) -> str:
+    def pull(self, path: str) -> str:  # type: ignore[override]
         """Get the content of a file.
 
         Args:
@@ -57,3 +60,36 @@ class Machine:
     def make_dir(self, path: str) -> None:
         """Create a directory."""
         Path(path).mkdir(parents=True, exist_ok=True)
+
+    def remove_path(self, path: str, recursive: bool = False) -> None:
+        """Remove a file or directory.
+
+        Args:
+            path: The path of the file or directory
+            recursive: Whether to remove recursively
+        raises:
+            ValueError: If the path is not absolute.
+        """
+        if not os.path.isabs(path):
+            raise ValueError(f"The provided path is not absolute: {path}")
+        if os.path.isdir(path) and recursive:
+            shutil.rmtree(path)
+            logger.info("Recursively removed directory %s", path)
+        elif os.path.isfile(path) or (os.path.isdir(path) and not recursive):
+            os.remove(path)
+            logger.info("Removed file or directory %s", path)
+        else:
+            logger.info("No such file or directory: %s", path)
+
+    def send_signal(self, signal: int, service_name: str) -> None:
+        """Send a signal to the charm.
+
+        Args:
+            signal: The signal to send
+        """
+        processes = list(psutil.process_iter())
+        for proc in processes:
+            if proc.name() == service_name:
+                os.kill(proc.pid, signal)
+                logger.info("Sent signal %s to charm", signal)
+                break

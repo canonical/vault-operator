@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import hcl
+import hcl  # type: ignore[import-untyped]
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
@@ -35,10 +35,16 @@ class MockMachine:
         self.push_called = True
         self.push_called_with = {"path": path, "source": source}
 
-    def pull(self, path: str) -> str:
+    def pull(self, path: str) -> str:  # type: ignore[empty-body]
         pass
 
     def make_dir(self, path: str) -> None:
+        pass
+
+    def remove_path(self, path: str, recursive: bool = False) -> None:
+        pass
+
+    def send_signal(self, signal: int, service_name: str) -> None:
         pass
 
 
@@ -114,6 +120,31 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
+    def _set_ca_certificate_secret_in_peer_relation(
+        self, relation_id: int, private_key: str, certificate: str
+    ) -> None:
+        """Set the certificate secret in the peer relation."""
+        content = {
+            "certificate": certificate,
+            "privatekey": private_key,
+        }
+        original_leader_state = self.harness.charm.unit.is_leader()
+        with self.harness.hooks_disabled():
+            self.harness.set_leader(is_leader=True)
+            secret_id = self.harness.add_model_secret(
+                owner=self.harness.charm.app.name, content=content
+            )
+            secret = self.harness.model.get_secret(id=secret_id)
+            secret.set_info(label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
+            self.harness.set_leader(original_leader_state)
+        key_values = {"vault-ca-certificates-secret-id": secret_id}
+        self.harness.update_relation_data(
+            app_or_unit=self.harness.charm.app.name,
+            relation_id=relation_id,
+            key_values=key_values,
+        )
+
+    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
@@ -134,6 +165,7 @@ class TestCharm(unittest.TestCase):
         )
         vault_snap.hold.assert_called()
 
+    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
@@ -142,7 +174,12 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader(is_leader=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
-        self._set_peer_relation()
+        peer_relation_id = self._set_peer_relation()
+        self._set_ca_certificate_secret_in_peer_relation(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+            relation_id=peer_relation_id,
+        )
 
         self.harness.charm.on.install.emit()
 
@@ -179,6 +216,7 @@ class TestCharm(unittest.TestCase):
             "Waiting for other units to provide their addresses"
         )
 
+    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_when_configure_then_service_started(self, mock_snap_cache, patch_get_binding):
@@ -196,12 +234,18 @@ class TestCharm(unittest.TestCase):
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
         )
+        self._set_ca_certificate_secret_in_peer_relation(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+            relation_id=peer_relation_id,
+        )
 
         self.harness.charm.on.install.emit()
 
         mock_snap_cache.assert_called_with()
         vault_snap.start.assert_called_with(services=["vaultd"])
 
+    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_unit_not_leader_and_peer_addresses_available_when_configure_then_status_is_active(
@@ -209,10 +253,15 @@ class TestCharm(unittest.TestCase):
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self.harness.set_leader(is_leader=False)
-        peer_relation_id = self._set_peer_relation()
+        peer_relation_id = peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
+        )
+        self._set_ca_certificate_secret_in_peer_relation(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+            relation_id=peer_relation_id,
         )
 
         self._set_other_node_api_address_in_peer_relation(
@@ -221,4 +270,7 @@ class TestCharm(unittest.TestCase):
 
         self.harness.charm.on.install.emit()
 
-        assert self.harness.charm.unit.status == ops.model.ActiveStatus()
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            ActiveStatus(),
+        )

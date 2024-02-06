@@ -6,7 +6,7 @@
 import logging
 from pathlib import Path
 
-import hvac
+import hvac  # type: ignore[import-untyped]
 import pytest
 import yaml
 from pytest_operator.plugin import OpsTest

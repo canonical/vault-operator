@@ -16,6 +16,10 @@ from machine import Machine
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
+from charms.vault_k8s.v0.vault_tls import (
+    File,
+    VaultTLSManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,7 @@ VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
 VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
+TLS_FILE_FOLDER_PATH = "/var/snap/vault/common/certs"
 
 
 def render_vault_config_file(
@@ -37,6 +42,8 @@ def render_vault_config_file(
     max_lease_ttl: str,
     cluster_address: str,
     api_address: str,
+    tls_cert_file: str,
+    tls_key_file: str,
     tcp_address: str,
     raft_storage_path: str,
     node_id: str,
@@ -50,6 +57,8 @@ def render_vault_config_file(
         max_lease_ttl=max_lease_ttl,
         cluster_address=cluster_address,
         api_address=api_address,
+        tls_cert_file=tls_cert_file,
+        tls_key_file=tls_key_file,
         tcp_address=tcp_address,
         raft_storage_path=raft_storage_path,
         node_id=node_id,
@@ -116,6 +125,12 @@ class VaultOperatorCharm(CharmBase):
                 }
             ],
         )
+        self.tls = VaultTLSManager(
+            charm=self,
+            peer_relation=PEER_RELATION_NAME,
+            substrate=self.machine,
+            tls_folder_path=TLS_FILE_FOLDER_PATH,
+        )
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
@@ -140,6 +155,9 @@ class VaultOperatorCharm(CharmBase):
             return
         self._install_vault_snap()
         self._create_backend_directory()
+        self._create_certs_directory()
+        self.tls.subject_ip = self._bind_address  # type: ignore[assignment]
+        self.tls.configure_certificates(self._bind_address)
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
@@ -165,6 +183,9 @@ class VaultOperatorCharm(CharmBase):
     def _create_backend_directory(self) -> None:
         self.machine.make_dir(path=VAULT_STORAGE_PATH)
 
+    def _create_certs_directory(self) -> None:
+        self.machine.make_dir(path=TLS_FILE_FOLDER_PATH)
+
     def _start_vault_service(self) -> None:
         """Start the Vault service."""
         snap_cache = snap.SnapCache()
@@ -179,6 +200,7 @@ class VaultOperatorCharm(CharmBase):
         retry_joins = [
             {
                 "leader_api_addr": node_api_address,
+                "leader_ca_cert_file": f"{TLS_FILE_FOLDER_PATH}/{File.CA.name.lower()}.pem",
             }
             for node_api_address in self._other_peer_node_api_addresses()
         ]
@@ -187,6 +209,8 @@ class VaultOperatorCharm(CharmBase):
             max_lease_ttl=self.model.config["max_lease_ttl"],
             cluster_address=self._cluster_address,
             api_address=self._api_address,
+            tls_cert_file=f"{TLS_FILE_FOLDER_PATH}/{File.CERT.name.lower()}.pem",
+            tls_key_file=f"{TLS_FILE_FOLDER_PATH}/{File.KEY.name.lower()}.pem",
             tcp_address=f"[::]:{VAULT_PORT}",
             raft_storage_path=VAULT_STORAGE_PATH,
             node_id=self._node_id,
