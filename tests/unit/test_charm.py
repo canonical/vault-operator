@@ -2,35 +2,15 @@
 # See LICENSE file for licensing details.
 
 import unittest
-from typing import List, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import hcl
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
-from charms.operator_libs_linux.v2.snap import SnapState
+from charms.operator_libs_linux.v2.snap import Snap, SnapState
 
 PEER_RELATION_NAME = "vault-peers"
-
-
-class MockSnapObject:
-    def __init__(self, name):
-        self.name = name
-        self.ensure_called = False
-        self.ensure_called_with = None
-        self.hold_called = False
-
-    def ensure(self, state, channel, revision):
-        self.ensure_called = True
-        self.ensure_called_with = (state, channel, revision)
-
-    def hold(self):
-        self.hold_called = True
-
-    def start(self, services: Optional[List[str]] = None, enable: Optional[bool] = False) -> None:
-        self.start_called = True
-        self.start_called_with = {"services": services, "enable": enable}
 
 
 class MockNetwork:
@@ -140,7 +120,7 @@ class TestCharm(unittest.TestCase):
         self, mock_snap_cache, patch_get_binding
     ):
         self.harness.set_leader(is_leader=True)
-        vault_snap = MockSnapObject("vault")
+        vault_snap = MagicMock(spec=Snap, latest=False)
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
         self._set_peer_relation()
@@ -149,9 +129,10 @@ class TestCharm(unittest.TestCase):
         self.harness.charm.on.install.emit()
 
         mock_snap_cache.assert_called_with()
-        assert vault_snap.ensure_called
-        assert vault_snap.ensure_called_with == (SnapState.Latest, "1.15/beta", "2181")
-        assert vault_snap.hold_called
+        vault_snap.ensure.assert_called_with(
+            SnapState.Latest, channel="1.15/beta", revision="2181"
+        )
+        vault_snap.hold.assert_called()
 
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
@@ -202,7 +183,7 @@ class TestCharm(unittest.TestCase):
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_when_configure_then_service_started(self, mock_snap_cache, patch_get_binding):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
-        vault_snap = MockSnapObject("vault")
+        vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
@@ -219,8 +200,7 @@ class TestCharm(unittest.TestCase):
         self.harness.charm.on.install.emit()
 
         mock_snap_cache.assert_called_with()
-        assert vault_snap.start_called
-        assert vault_snap.start_called_with == {"enable": False, "services": ["vaultd"]}
+        vault_snap.start.assert_called_with(services=["vaultd"])
 
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
