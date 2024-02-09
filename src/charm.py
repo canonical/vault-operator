@@ -142,6 +142,7 @@ class VaultOperatorCharm(CharmBase):
         vault.enable_audit_device(device_type="file", path="stdout")
         vault.enable_approle_auth()
         vault.configure_charm_access_policy(name=CHARM_POLICY_NAME)
+        # TODO: What should this actually be set to?
         cidrs = [f"{self._bind_address}/24"]
         role_id = vault.configure_approle(
             name="charm",
