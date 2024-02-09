@@ -3,7 +3,7 @@ jinja2
 ops
 pyhcl
 
-# Downstream requirements
+# Upstream requirements
 
 # vault_client requirements
 hvac
