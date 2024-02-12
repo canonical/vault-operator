@@ -138,7 +138,6 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
             self.unit.status = WaitingStatus("Waiting for other units to provide their addresses")
             return
-        self.unit.status = MaintenanceStatus("Installing Vault")
         self._install_vault_snap()
         self._create_backend_directory()
         self._generate_vault_config_file()
@@ -151,6 +150,9 @@ class VaultOperatorCharm(CharmBase):
         try:
             snap_cache = snap.SnapCache()
             vault_snap = snap_cache[VAULT_SNAP_NAME]
+            if vault_snap.latest:
+                return
+            self.unit.status = MaintenanceStatus("Installing Vault")
             vault_snap.ensure(
                 snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
             )
