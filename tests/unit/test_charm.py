@@ -203,7 +203,6 @@ class TestCharm(unittest.TestCase):
         mock_snap_cache.assert_called_with()
         vault_snap.start.assert_called_with(services=["vaultd"])
 
-    @patch.object(VaultOperatorCharm, "_api_address", "http://1.1.1.1:8200")
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     @patch("charm.Vault")
@@ -233,12 +232,24 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(self.harness.charm.unit.status, ops.model.ActiveStatus())
 
-    @patch("charm.VaultOperatorCharm._configure")
-    @patch.object(VaultOperatorCharm, "_api_address", "http://1.1.1.1:8200")
+    @patch("charms.operator_libs_linux.v2.snap.SnapCache", new=MagicMock)
+    @patch("ops.model.Model.get_binding")
     @patch("charm.Vault")
     def test_given_unit_is_leader_when_authorize_charm_then_approle_configured_and_secrets_stored(
-        self, mock_vault_class: MagicMock, mock_configure: MagicMock
+        self,
+        mock_vault_class: MagicMock,
+        mock_get_binding: MagicMock,
     ):
+        mock_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        peer_relation_id = self._set_peer_relation()
+        other_unit_name = f"{self.harness.charm.app.name}/1"
+        self.harness.add_relation_unit(
+            relation_id=peer_relation_id, remote_unit_name=other_unit_name
+        )
+
+        self._set_other_node_api_address_in_peer_relation(
+            relation_id=peer_relation_id, unit_name=other_unit_name
+        )
         self.harness.set_leader(is_leader=True)
         mock_vault = MagicMock(
             spec=Vault,
@@ -265,4 +276,3 @@ class TestCharm(unittest.TestCase):
 
         assert secret_content["role-id"] == "approle_id"
         assert secret_content["secret-id"] == "secret_id"
-        mock_configure.assert_called_once()
