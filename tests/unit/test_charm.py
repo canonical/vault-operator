@@ -2,14 +2,13 @@
 # See LICENSE file for licensing details.
 
 import unittest
-from typing import List, Optional
-from unittest.mock import Mock, call, patch
+from unittest.mock import MagicMock, Mock, call, patch
 
 import hcl  # type: ignore[import-untyped]
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
-from charms.operator_libs_linux.v2.snap import SnapState
+from charms.operator_libs_linux.v2.snap import Snap, SnapState
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
 from ops.model import ActiveStatus, WaitingStatus
 
@@ -100,9 +99,7 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
-    def _set_ca_certificate_secret_in_peer_relation(
-        self, relation_id: int, private_key: str, certificate: str
-    ) -> None:
+    def _set_ca_certificate_secret(self, private_key: str, certificate: str) -> None:
         """Set the certificate secret in the peer relation."""
         content = {
             "certificate": certificate,
@@ -117,12 +114,6 @@ class TestCharm(unittest.TestCase):
             secret = self.harness.model.get_secret(id=secret_id)
             secret.set_info(label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
             self.harness.set_leader(original_leader_state)
-        key_values = {"vault-ca-certificates-secret-id": secret_id}
-        self.harness.update_relation_data(
-            app_or_unit=self.harness.charm.app.name,
-            relation_id=relation_id,
-            key_values=key_values,
-        )
 
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
@@ -156,11 +147,10 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader(is_leader=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
-        peer_relation_id = self._set_peer_relation()
-        self._set_ca_certificate_secret_in_peer_relation(
+        self._set_peer_relation()
+        self._set_ca_certificate_secret(
             certificate="whatever certificate",
             private_key="whatever private key",
-            relation_id=peer_relation_id,
         )
 
         self.harness.charm.on.install.emit()
@@ -202,10 +192,11 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_is_leader_and_ca_certificate_secret_not_set_when_configure_then_status_is_waiting(
+    def test_given_unit_is_leader_and_ca_certificate_saved_when_configure_then_status_is_waiting(
         self,
         patch_get_binding,
     ):
+        self.mock_machine.exists.return_value = False
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
@@ -221,7 +212,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            WaitingStatus("Waiting for CA certificate to be set in peer relation"),
+            WaitingStatus("Waiting for CA certificate to be set."),
         )
 
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
@@ -234,7 +225,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding,
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
-        vault_snap = MockSnapObject("vault")
+        vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
@@ -243,10 +234,9 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
         )
-        self._set_ca_certificate_secret_in_peer_relation(
+        self._set_ca_certificate_secret(
             certificate="whatever certificate",
             private_key="whatever private key",
-            relation_id=peer_relation_id,
         )
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
@@ -270,7 +260,7 @@ class TestCharm(unittest.TestCase):
     ):
         bind_address = "1.2.1.2"
         patch_get_binding.return_value = MockBinding(bind_address=bind_address)
-        vault_snap = MockSnapObject("vault")
+        vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
@@ -279,10 +269,9 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
         )
-        self._set_ca_certificate_secret_in_peer_relation(
+        self._set_ca_certificate_secret(
             certificate="whatever certificate",
             private_key="whatever private key",
-            relation_id=peer_relation_id,
         )
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
@@ -315,10 +304,9 @@ class TestCharm(unittest.TestCase):
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
         )
-        self._set_ca_certificate_secret_in_peer_relation(
+        self._set_ca_certificate_secret(
             certificate="whatever certificate",
             private_key="whatever private key",
-            relation_id=peer_relation_id,
         )
 
         self.harness.charm.on.install.emit()
@@ -342,10 +330,9 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
         )
-        self._set_ca_certificate_secret_in_peer_relation(
+        self._set_ca_certificate_secret(
             certificate="whatever certificate",
             private_key="whatever private key",
-            relation_id=peer_relation_id,
         )
 
         self._set_other_node_api_address_in_peer_relation(

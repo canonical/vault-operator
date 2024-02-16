@@ -8,19 +8,22 @@
 import logging
 import os
 import shutil
-import psutil
+import signal
 from pathlib import Path
-from charms.vault_k8s.v0.vault_tls import Substrate
+from typing import Optional, TextIO
+
+import psutil
+from charms.vault_k8s.v0.vault_tls import WorkloadBase
 
 logger = logging.getLogger(__name__)
 
 
-class Machine(Substrate):
+class Machine(WorkloadBase):
     """A class to interact with a unit machine.
 
-    This class has the same method signatures as Pebble API in the Ops
-    Library. This is to improve consistency between the Machine and Kubernetes
-    versions of the charm.
+    This class implements the WorkloadBase interface
+    that has the same method signatures as Pebble API in the Ops
+    Library.
     """
 
     def exists(self, path: str) -> bool:
@@ -34,7 +37,7 @@ class Machine(Substrate):
         """
         return os.path.isfile(path)
 
-    def pull(self, path: str) -> str:  # type: ignore[override]
+    def pull(self, path: str) -> TextIO:
         """Get the content of a file.
 
         Args:
@@ -43,8 +46,7 @@ class Machine(Substrate):
         Returns:
             str: The content of the file
         """
-        with open(path, "r") as read_file:
-            return read_file.read()
+        return open(path, "r")
 
     def push(self, path: str, source: str) -> None:
         """Pushes a file to the unit.
@@ -81,15 +83,38 @@ class Machine(Substrate):
         else:
             logger.info("No such file or directory: %s", path)
 
-    def send_signal(self, signal: int, service_name: str) -> None:
+    def send_signal(self, signal: int, process: str) -> None:
         """Send a signal to the charm.
 
         Args:
             signal: The signal to send
+            process: The name of the process
+        """
+        if pid := self._find_process(process):
+            os.kill(pid, signal)
+            logger.info("Sent signal %s to charm", signal)
+
+    def stop(self, process: str) -> None:
+        """Stop a process.
+
+        Args:
+            process: The name of the process
+        """
+        if pid := self._find_process(process):
+            os.kill(pid, signal.SIGTERM)
+            logger.info("Stopped process %s", process)
+
+    def _find_process(self, process: str) -> Optional[int]:
+        """Find a process.
+
+        Args:
+            process: The name of the process
+
+        Returns:
+            int: The process ID
         """
         processes = list(psutil.process_iter())
         for proc in processes:
-            if proc.name() == service_name:
-                os.kill(proc.pid, signal)
-                logger.info("Sent signal %s to charm", signal)
-                break
+            if proc.name() == process:
+                return proc.pid
+        return None
