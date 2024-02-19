@@ -88,7 +88,7 @@ async def test_given_charm_deployed_and_active_when_vault_status_checked_then_va
         timeout=1000,
     )
     unit_ip = ops_test.model.units.get(f"{APP_NAME}/0").public_address
-    vault_endpoint = f"http://{unit_ip}:8200"
+    vault_endpoint = f"https://{unit_ip}:8200"
     # TODO: Use certs in "verify" when added in charm.
     client = hvac.Client(url=vault_endpoint, verify=False)
     response = client.sys.read_health_status()
