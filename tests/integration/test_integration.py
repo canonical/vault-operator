@@ -120,7 +120,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
 
 @pytest.mark.abort_on_fail
 async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(
-    ops_test: OpsTest,
+    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
 ):
     """To test that Vault is actually running when the charm is active."""
     assert ops_test.model
@@ -130,8 +130,8 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
         timeout=1000,
     )
     await ops_test.model.integrate(
-        relation1=f"{APP_NAME}:tls-certificates",
-        relation2=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:tls-certificates",
+        relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
+        relation2=f"{APP_NAME}:tls-certificates-access",
     )
     unit_ip = ops_test.model.units.get(f"{APP_NAME}/0").public_address
     vault_endpoint = f"https://{unit_ip}:8200"
