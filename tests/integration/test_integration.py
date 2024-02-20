@@ -133,6 +133,11 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
         relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
         relation2=f"{APP_NAME}:tls-certificates-access",
     )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
     unit_ip = ops_test.model.units.get(f"{APP_NAME}/0").public_address
     vault_endpoint = f"https://{unit_ip}:8200"
     action_output = await run_get_ca_certificate_action(ops_test)
