@@ -24,7 +24,7 @@ jobs:
       - unit-tests-with-coverage
     uses: ./.github/workflows/integration-tests.yaml
     with:
-      charm-file-name: "vault-dev_ubuntu-22.04-amd64.charm"
+      charm-file-name: "vault_ubuntu-22.04-amd64.charm"
     secrets: inherit
 
   publish-charm:
@@ -36,5 +36,5 @@ jobs:
     if: ${{ github.ref_name == 'main' }}
     uses: ./.github/workflows/publish-charm.yaml
     with:
-      charm-file-name: "vault-dev_ubuntu-22.04-amd64.charm"
+      charm-file-name: "vault_ubuntu-22.04-amd64.charm"
     secrets: inherit

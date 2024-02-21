@@ -1,7 +1,7 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-name: vault-dev
+name: vault
 
 display-name: Vault
 summary: A tool for managing secrets
@@ -14,7 +14,7 @@ description: |
   network encryption-as-a-service, or generate AWS IAM/STS
   credentials, SQL/NoSQL databases, X.509 certificates,
   SSH credentials, and more.
-website: https://charmhub.io/vault-dev
+website: https://charmhub.io/vault
 source: https://github.com/canonical/vault-operator
 issues: https://github.com/canonical/vault-operator/issues
 docs: https://discourse.charmhub.io/t/vault-operator-machine/12983

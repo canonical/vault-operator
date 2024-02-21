@@ -32,7 +32,7 @@ jobs:
           built-charm-path: ${{ inputs.charm-file-name }}
           credentials: "${{ secrets.CHARMCRAFT_AUTH }}"
           github-token: "${{ secrets.GITHUB_TOKEN }}"
-          channel: latest/edge
+          channel: 1.15/edge
 
       - name: Archive charmcraft logs
         if: failure()
