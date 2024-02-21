@@ -34,3 +34,15 @@ peers:
 provides:
   cos-agent:
     interface: cos_agent
+  send-ca-cert:
+    interface: certificate_transfer
+    description: |
+      Send our CA certificate so clients can trust the CA by means of forming a relation.
+
+requires:
+  tls-certificates-access:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Communication between the vault units and from a client to Vault should 
+      be done using the certificates provided by this integration.

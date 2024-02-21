@@ -11,6 +11,10 @@ from typing import Dict, List, Optional
 import hcl  # type: ignore[import-untyped]
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
+from charms.vault_k8s.v0.vault_tls import (
+    File,
+    VaultTLSManager,
+)
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
 from ops.charm import CharmBase
@@ -27,9 +31,11 @@ VAULT_CONFIG_FILE_NAME = "vault.hcl"
 VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
 VAULT_SNAP_NAME = "vault"
+VAULT_SERVICE_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
 VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
+MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 
 
 def render_vault_config_file(
@@ -37,6 +43,8 @@ def render_vault_config_file(
     max_lease_ttl: str,
     cluster_address: str,
     api_address: str,
+    tls_cert_file: str,
+    tls_key_file: str,
     tcp_address: str,
     raft_storage_path: str,
     node_id: str,
@@ -50,6 +58,8 @@ def render_vault_config_file(
         max_lease_ttl=max_lease_ttl,
         cluster_address=cluster_address,
         api_address=api_address,
+        tls_cert_file=tls_cert_file,
+        tls_key_file=tls_key_file,
         tcp_address=tcp_address,
         raft_storage_path=raft_storage_path,
         node_id=node_id,
@@ -116,6 +126,12 @@ class VaultOperatorCharm(CharmBase):
                 }
             ],
         )
+        self.tls = VaultTLSManager(
+            charm=self,
+            workload=self.machine,
+            service_name=VAULT_SERVICE_NAME,
+            tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
+        )
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
@@ -138,11 +154,17 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
             self.unit.status = WaitingStatus("Waiting for other units to provide their addresses")
             return
+        if not self.unit.is_leader() and not self.tls.ca_certificate_is_saved():
+            self.unit.status = WaitingStatus("Waiting for CA certificate to be set.")
+            return
         self._install_vault_snap()
         self._create_backend_directory()
+        self._create_certs_directory()
+        self.tls.configure_certificates(self._bind_address)
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
+        self.tls.send_ca_cert()
         self.unit.status = ActiveStatus()
 
     def _install_vault_snap(self) -> None:
@@ -165,6 +187,9 @@ class VaultOperatorCharm(CharmBase):
     def _create_backend_directory(self) -> None:
         self.machine.make_dir(path=VAULT_STORAGE_PATH)
 
+    def _create_certs_directory(self) -> None:
+        self.machine.make_dir(path=MACHINE_TLS_FILE_DIRECTORY_PATH)
+
     def _start_vault_service(self) -> None:
         """Start the Vault service."""
         snap_cache = snap.SnapCache()
@@ -179,6 +204,7 @@ class VaultOperatorCharm(CharmBase):
         retry_joins = [
             {
                 "leader_api_addr": node_api_address,
+                "leader_ca_cert_file": f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",
             }
             for node_api_address in self._other_peer_node_api_addresses()
         ]
@@ -187,6 +213,8 @@ class VaultOperatorCharm(CharmBase):
             max_lease_ttl=self.model.config["max_lease_ttl"],
             cluster_address=self._cluster_address,
             api_address=self._api_address,
+            tls_cert_file=f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CERT.name.lower()}.pem",
+            tls_key_file=f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.KEY.name.lower()}.pem",
             tcp_address=f"[::]:{VAULT_PORT}",
             raft_storage_path=VAULT_STORAGE_PATH,
             node_id=self._node_id,
@@ -195,7 +223,8 @@ class VaultOperatorCharm(CharmBase):
         existing_content = ""
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
         if self.machine.exists(path=vault_config_file_path):
-            existing_content = self.machine.pull(path=vault_config_file_path)
+            existing_content_stringio = self.machine.pull(path=vault_config_file_path)
+            existing_content = existing_content_stringio.read()
 
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
             self.machine.push(
