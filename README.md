@@ -3,5 +3,5 @@
 ## Usage
 
 ```shell
-juju deploy vault-dev -n 5
+juju deploy vault -n 5
 ```
