@@ -287,7 +287,7 @@ class VaultOperatorCharm(CharmBase):
         vaultd_service = vault_services.get("vaultd")
         if not vaultd_service:
             return False
-        if not vaultd_service["enabled"] or not vaultd_service["active"]:
+        if not vaultd_service["active"]:
             return False
         return True
 
