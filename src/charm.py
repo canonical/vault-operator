@@ -153,7 +153,7 @@ class VaultOperatorCharm(CharmBase):
         if not self.tls.tls_file_pushed_to_workload(File.CA):
             event.add_status(WaitingStatus("Waiting for CA certificate in workload"))
             return
-        if not self._vault_service_started():
+        if not self._is_vault_service_started():
             event.add_status(WaitingStatus("Waiting for Vault service to start"))
             return
         event.add_status(ActiveStatus())
@@ -279,7 +279,7 @@ class VaultOperatorCharm(CharmBase):
             if node_api_address != self._api_address
         ]
 
-    def _vault_service_started(self) -> bool:
+    def _is_vault_service_started(self) -> bool:
         """Check if the Vault service is started."""
         snap_cache = snap.SnapCache()
         vault_snap = snap_cache[VAULT_SNAP_NAME]
