@@ -19,7 +19,7 @@ from jinja2 import Environment, FileSystemLoader
 from machine import Machine
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.main import main
-from ops.model import ActiveStatus, ModelError, WaitingStatus
+from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +189,7 @@ class VaultOperatorCharm(CharmBase):
             vault_snap = snap_cache[VAULT_SNAP_NAME]
             if vault_snap.latest:
                 return
+            self.unit.status = MaintenanceStatus("Installing Vault")
             vault_snap.ensure(
                 snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
             )
