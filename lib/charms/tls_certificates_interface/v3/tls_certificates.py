@@ -312,7 +312,7 @@ LIBAPI = 3
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 0
+LIBPATCH = 3
 
 PYDEPS = ["cryptography", "jsonschema"]
 
@@ -696,7 +696,7 @@ def generate_ca(
 
     Args:
         private_key (bytes): Private key
-        subject (str): Certificate subject
+        subject (str): Common Name that can be an IP or a Full Qualified Domain Name (FQDN).
         private_key_password (bytes): Private key password
         validity (int): Certificate validity time (in days)
         country (str): Certificate Issuing country
@@ -707,7 +707,7 @@ def generate_ca(
     private_key_object = serialization.load_pem_private_key(
         private_key, password=private_key_password
     )
-    subject = issuer = x509.Name(
+    subject_name = x509.Name(
         [
             x509.NameAttribute(x509.NameOID.COUNTRY_NAME, country),
             x509.NameAttribute(x509.NameOID.COMMON_NAME, subject),
@@ -730,8 +730,8 @@ def generate_ca(
     )
     cert = (
         x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
+        .subject_name(subject_name)
+        .issuer_name(subject_name)
         .public_key(private_key_object.public_key())  # type: ignore[arg-type]
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.utcnow())
@@ -962,7 +962,7 @@ def generate_csr(
 
     Args:
         private_key (bytes): Private key
-        subject (str): CSR Subject.
+        subject (str): CSR Common Name that can be an IP or a Full Qualified Domain Name (FQDN).
         add_unique_id_to_subject_name (bool): Whether a unique ID must be added to the CSR's
             subject name. Always leave to "True" when the CSR is used to request certificates
             using the tls-certificates relation.
@@ -1488,10 +1488,10 @@ class TLSCertificatesRequiresV3(Object):
         Returns:
             list: List of RequirerCSR objects.
         """
-        requirer_csrs = []
         relation = self.model.get_relation(self.relationship_name)
         if not relation:
-            raise RuntimeError(f"Relation {self.relationship_name} does not exist")
+            return []
+        requirer_csrs = []
         requirer_relation_data = _load_relation_data(relation.data[self.model.unit])
         requirer_csrs_dict = requirer_relation_data.get("certificate_signing_requests", [])
         for requirer_csr_dict in requirer_csrs_dict:

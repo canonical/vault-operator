@@ -17,9 +17,9 @@ from charms.vault_k8s.v0.vault_tls import (
 )
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
-from ops.charm import CharmBase
+from ops.charm import CharmBase, CollectStatusEvent
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
+from ops.model import ActiveStatus, ModelError, WaitingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -133,10 +133,30 @@ class VaultOperatorCharm(CharmBase):
             tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
         )
         self.framework.observe(self.on.install, self._configure)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
+
+    def _on_collect_status(self, event: CollectStatusEvent):
+        """Handle the collect status event."""
+        if not self._is_peer_relation_created():
+            event.add_status(WaitingStatus("Waiting for peer relation"))
+            return
+        if not self._bind_address:
+            event.add_status(WaitingStatus("Waiting for bind address"))
+            return
+        if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
+            event.add_status(WaitingStatus("Waiting for other units to provide their addresses"))
+            return
+        if not self.tls.tls_file_pushed_to_workload(File.CA):
+            event.add_status(WaitingStatus("Waiting for CA certificate in workload"))
+            return
+        if not self._vault_service_started():
+            event.add_status(WaitingStatus("Waiting for Vault service to start"))
+            return
+        event.add_status(ActiveStatus())
 
     def _configure(self, _):
         """Handle Vault installation.
@@ -146,16 +166,12 @@ class VaultOperatorCharm(CharmBase):
           - Generating the Vault config file
         """
         if not self._is_peer_relation_created():
-            self.unit.status = WaitingStatus("Waiting for peer relation")
             return
         if not self._bind_address:
-            self.unit.status = WaitingStatus("Waiting for bind address")
             return
         if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
-            self.unit.status = WaitingStatus("Waiting for other units to provide their addresses")
             return
         if not self.unit.is_leader() and not self.tls.ca_certificate_is_saved():
-            self.unit.status = WaitingStatus("Waiting for CA certificate to be set.")
             return
         self._install_vault_snap()
         self._create_backend_directory()
@@ -165,7 +181,6 @@ class VaultOperatorCharm(CharmBase):
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self.tls.send_ca_cert()
-        self.unit.status = ActiveStatus()
 
     def _install_vault_snap(self) -> None:
         """Installs the Vault snap in the machine."""
@@ -174,7 +189,6 @@ class VaultOperatorCharm(CharmBase):
             vault_snap = snap_cache[VAULT_SNAP_NAME]
             if vault_snap.latest:
                 return
-            self.unit.status = MaintenanceStatus("Installing Vault")
             vault_snap.ensure(
                 snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
             )
@@ -264,6 +278,18 @@ class VaultOperatorCharm(CharmBase):
             for node_api_address in self._get_peer_relation_node_api_addresses()
             if node_api_address != self._api_address
         ]
+
+    def _vault_service_started(self) -> bool:
+        """Check if the Vault service is started."""
+        snap_cache = snap.SnapCache()
+        vault_snap = snap_cache[VAULT_SNAP_NAME]
+        vault_services = vault_snap.services
+        vaultd_service = vault_services.get("vaultd")
+        if not vaultd_service:
+            return False
+        if not vaultd_service["enabled"] or not vaultd_service["active"]:
+            return False
+        return True
 
     @property
     def _bind_address(self) -> Optional[str]:
