@@ -162,14 +162,14 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(pushed_content_hcl, expected_content_hcl)
 
     @patch("ops.model.Model.get_binding")
-    def test_given_bind_address_unavailable_when_configure_then_status_is_waiting(
+    def test_given_bind_address_unavailable_when_collectstatus_then_status_is_waiting(
         self, patch_get_binding
     ):
         patch_get_binding.return_value = None
         self.harness.set_leader(is_leader=False)
         self._set_peer_relation()
 
-        self.harness.charm.on.install.emit()
+        self.harness.evaluate_status()
 
         self.assertEqual(
             self.harness.charm.unit.status,
@@ -177,14 +177,14 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_not_leader_and_peer_addresses_unavailable_when_configure_then_status_is_waiting(
+    def test_given_unit_not_leader_and_peer_addresses_unavailable_when_collectstatus_then_status_is_waiting(
         self, patch_get_binding
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self.harness.set_leader(is_leader=False)
         self._set_peer_relation()
 
-        self.harness.charm.on.install.emit()
+        self.harness.evaluate_status()
 
         self.assertEqual(
             self.harness.charm.unit.status,
@@ -192,7 +192,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_is_leader_and_ca_certificate_saved_when_configure_then_status_is_waiting(
+    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_waiting(
         self,
         patch_get_binding,
     ):
@@ -208,11 +208,11 @@ class TestCharm(unittest.TestCase):
             relation_id=peer_relation_id, unit_name=other_unit_name
         )
 
-        self.harness.charm.on.install.emit()
+        self.harness.evaluate_status()
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            WaitingStatus("Waiting for CA certificate to be set."),
+            WaitingStatus("Waiting for CA certificate in workload"),
         )
 
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
@@ -318,7 +318,7 @@ class TestCharm(unittest.TestCase):
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     @patch("charms.operator_libs_linux.v2.snap.SnapCache")
-    def test_given_unit_not_leader_and_peer_addresses_available_when_configure_then_status_is_active(
+    def test_given_unit_not_leader_and_peer_addresses_available_when_collectstatus_then_status_is_active(
         self,
         _,
         patch_get_binding,
@@ -339,7 +339,7 @@ class TestCharm(unittest.TestCase):
             relation_id=peer_relation_id, unit_name=other_unit_name
         )
 
-        self.harness.charm.on.install.emit()
+        self.harness.evaluate_status()
 
         self.assertEqual(
             self.harness.charm.unit.status,
