@@ -8,7 +8,7 @@
 import logging
 from typing import Dict, List, Optional
 
-import hcl  # type: ignore[import-untyped]
+import hcl
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
 from charms.vault_k8s.v0.vault_tls import (
