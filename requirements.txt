@@ -10,7 +10,7 @@ attrs==23.2.0
     #   referencing
 cffi==1.16.0
     # via cryptography
-cosl==0.0.8
+cosl==0.0.10
     # via -r requirements.in
 cryptography==42.0.5
     # via -r requirements.in
