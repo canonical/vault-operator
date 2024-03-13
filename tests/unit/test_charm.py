@@ -73,12 +73,17 @@ class TestConfigFileContentMatches(unittest.TestCase):
         self.assertTrue(matches)
 
 
+mock_snap_cache = MagicMock()
+
+
+@patch("charm.snap.SnapCache", new=mock_snap_cache)
 class TestCharm(unittest.TestCase):
+    @patch("charm.VaultTLSManager")
     @patch("charm.Machine")
-    def setUp(self, patch_machine):
-        self.mock_machine = patch_machine
+    def setUp(self, mock_machine_class, mock_vault_tls_manager_class):
+        self.mock_machine = mock_machine_class.return_value
         self.model_name = "whatever"
-        patch_machine.return_value = self.mock_machine
+        self.vault_tls_manager = mock_vault_tls_manager_class.return_value
         self.harness = ops.testing.Harness(VaultOperatorCharm)
         self.harness.set_model_name(self.model_name)
         self.addCleanup(self.harness.cleanup)
@@ -118,9 +123,8 @@ class TestCharm(unittest.TestCase):
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
-        self, mock_snap_cache, patch_get_binding
+        self, patch_get_binding
     ):
         self.harness.set_leader(is_leader=True)
         vault_snap = MagicMock(spec=Snap, latest=False)
@@ -140,9 +144,8 @@ class TestCharm(unittest.TestCase):
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock(return_value=False))
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
-        self, _, patch_get_binding
+        self, patch_get_binding
     ):
         self.harness.set_leader(is_leader=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
@@ -192,7 +195,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_waiting(
+    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_active(
         self,
         patch_get_binding,
     ):
@@ -212,16 +215,14 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            WaitingStatus("Waiting for CA certificate in workload"),
+            ActiveStatus(),
         )
 
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_vault_snap_installed_when_configure_then_directories_created(
         self,
-        mock_snap_cache,
         patch_get_binding,
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
@@ -248,15 +249,11 @@ class TestCharm(unittest.TestCase):
         assert call(path=VAULT_STORAGE_PATH) in self.mock_machine.make_dir.call_args_list
         assert call(path=TLS_FILE_FOLDER_PATH) in self.mock_machine.make_dir.call_args_list
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates")
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_vault_snap_installed_when_configure_then_certificates_are_configured(
         self,
-        mock_snap_cache,
         patch_get_binding,
-        patch_configure_certificates,
     ):
         bind_address = "1.2.1.2"
         patch_get_binding.return_value = MockBinding(bind_address=bind_address)
@@ -279,15 +276,13 @@ class TestCharm(unittest.TestCase):
 
         self.harness.charm.on.install.emit()
 
-        patch_configure_certificates.assert_called_with(bind_address)
+        self.vault_tls_manager.configure_certificates.assert_called_with(bind_address)
 
     @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_snap_installed_when_configure_then_service_started(
         self,
-        mock_snap_cache,
         patch_get_binding,
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
@@ -314,13 +309,10 @@ class TestCharm(unittest.TestCase):
         mock_snap_cache.assert_called_with()
         vault_snap.start.assert_called_with(services=["vaultd"])
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    @patch("charms.operator_libs_linux.v2.snap.SnapCache")
     def test_given_unit_not_leader_and_peer_addresses_available_when_collectstatus_then_status_is_active(
         self,
-        _,
         patch_get_binding,
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")

@@ -165,6 +165,7 @@ class VaultOperatorCharm(CharmBase):
           - Installing the Vault snap
           - Generating the Vault config file
         """
+        self._install_vault_snap()
         if not self._is_peer_relation_created():
             return
         if not self._bind_address:
@@ -173,7 +174,6 @@ class VaultOperatorCharm(CharmBase):
             return
         if not self.unit.is_leader() and not self.tls.ca_certificate_is_saved():
             return
-        self._install_vault_snap()
         self._create_backend_directory()
         self._create_certs_directory()
         self.tls.configure_certificates(self._bind_address)
