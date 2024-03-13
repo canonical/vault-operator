@@ -4,8 +4,6 @@
 #
 #    pip-compile requirements.in
 #
-annotated-types==0.6.0
-    # via pydantic
 attrs==23.2.0
     # via
     #   jsonschema
@@ -32,10 +30,8 @@ psutil==5.9.8
     # via -r requirements.in
 pycparser==2.21
     # via cffi
-pydantic==2.6.4
+pydantic==1.10.14
     # via -r requirements.in
-pydantic-core==2.16.3
-    # via pydantic
 pyhcl==0.4.5
     # via -r requirements.in
 pyyaml==6.0.1
@@ -54,6 +50,5 @@ typing-extensions==4.9.0
     # via
     #   cosl
     #   pydantic
-    #   pydantic-core
 websocket-client==1.7.0
     # via ops
