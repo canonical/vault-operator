@@ -73,21 +73,26 @@ class TestConfigFileContentMatches(unittest.TestCase):
         self.assertTrue(matches)
 
 
-mock_snap_cache = MagicMock()
-
-
-@patch("charm.snap.SnapCache", new=mock_snap_cache)
 class TestCharm(unittest.TestCase):
-    @patch("charm.VaultTLSManager")
-    @patch("charm.Machine")
-    def setUp(self, mock_machine_class, mock_vault_tls_manager_class):
-        self.mock_machine = mock_machine_class.return_value
+    patcher_snap_cache = patch("charm.snap.SnapCache")
+    patcher_vault_tls_manager = patch("charm.VaultTLSManager")
+    patcher_machine = patch("charm.Machine")
+
+    def setUp(self):
+        self.mock_snap_cache = TestCharm.patcher_snap_cache.start()
+        self.mock_vault_tls_manager = TestCharm.patcher_vault_tls_manager.start().return_value
+        self.mock_machine = TestCharm.patcher_machine.start().return_value
+
         self.model_name = "whatever"
-        self.vault_tls_manager = mock_vault_tls_manager_class.return_value
         self.harness = ops.testing.Harness(VaultOperatorCharm)
         self.harness.set_model_name(self.model_name)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
+
+    def tearDown(self) -> None:
+        TestCharm.patcher_snap_cache.stop()
+        TestCharm.patcher_vault_tls_manager.stop()
+        TestCharm.patcher_machine.stop()
 
     def _set_peer_relation(self) -> int:
         """Set the peer relation and return the relation id."""
@@ -120,7 +125,6 @@ class TestCharm(unittest.TestCase):
             secret.set_info(label=CA_CERTIFICATE_JUJU_SECRET_LABEL)
             self.harness.set_leader(original_leader_state)
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
@@ -129,19 +133,18 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader(is_leader=True)
         vault_snap = MagicMock(spec=Snap, latest=False)
         snap_cache = {"vault": vault_snap}
-        mock_snap_cache.return_value = snap_cache
+        self.mock_snap_cache.return_value = snap_cache
         self._set_peer_relation()
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
 
         self.harness.charm.on.install.emit()
 
-        mock_snap_cache.assert_called_with()
+        self.mock_snap_cache.assert_called_with()
         vault_snap.ensure.assert_called_with(
             SnapState.Latest, channel="1.15/beta", revision="2181"
         )
         vault_snap.hold.assert_called()
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock(return_value=False))
     @patch("ops.model.Model.get_binding")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
@@ -218,7 +221,6 @@ class TestCharm(unittest.TestCase):
             ActiveStatus(),
         )
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     def test_given_vault_snap_installed_when_configure_then_directories_created(
@@ -228,7 +230,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
-        mock_snap_cache.return_value = snap_cache
+        self.mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
@@ -259,7 +261,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding.return_value = MockBinding(bind_address=bind_address)
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
-        mock_snap_cache.return_value = snap_cache
+        self.mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
@@ -276,9 +278,8 @@ class TestCharm(unittest.TestCase):
 
         self.harness.charm.on.install.emit()
 
-        self.vault_tls_manager.configure_certificates.assert_called_with(bind_address)
+        self.mock_vault_tls_manager.configure_certificates.assert_called_with(bind_address)
 
-    @patch("charms.vault_k8s.v0.vault_tls.VaultTLSManager.configure_certificates", new=Mock())
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     def test_given_snap_installed_when_configure_then_service_started(
@@ -288,7 +289,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
-        mock_snap_cache.return_value = snap_cache
+        self.mock_snap_cache.return_value = snap_cache
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
@@ -306,7 +307,7 @@ class TestCharm(unittest.TestCase):
 
         self.harness.charm.on.install.emit()
 
-        mock_snap_cache.assert_called_with()
+        self.mock_snap_cache.assert_called_with()
         vault_snap.start.assert_called_with(services=["vaultd"])
 
     @patch("charm.config_file_content_matches", new=Mock())
