@@ -6,6 +6,7 @@
 """A machine charm for Vault."""
 
 import logging
+from contextlib import contextmanager
 from typing import Dict, List, Optional
 
 import hcl
@@ -139,6 +140,18 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
 
+    @contextmanager
+    def temp_maintenance_status(self: CharmBase, message: str):
+        """Context manager to set the charm status temporarily.
+
+        Useful around long-running operations to indicate that the charm is
+        busy.
+        """
+        previous_status = self.unit.status
+        self.unit.status = MaintenanceStatus(message)
+        yield
+        self.unit.status = previous_status
+
     def _on_collect_status(self, event: CollectStatusEvent):
         """Handle the collect status event."""
         if not self._is_peer_relation_created():
@@ -189,11 +202,11 @@ class VaultOperatorCharm(CharmBase):
             vault_snap = snap_cache[VAULT_SNAP_NAME]
             if vault_snap.latest:
                 return
-            self.unit.status = MaintenanceStatus("Installing Vault")
-            vault_snap.ensure(
-                snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
-            )
-            vault_snap.hold()
+            with self.temp_maintenance_status("Installing Vault"):
+                vault_snap.ensure(
+                    snap.SnapState.Latest, channel=VAULT_SNAP_CHANNEL, revision=VAULT_SNAP_REVISION
+                )
+                vault_snap.hold()
             logger.info("Vault snap installed")
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
