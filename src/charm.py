@@ -141,7 +141,7 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
 
     @contextmanager
-    def temp_maintenance_status(self: CharmBase, message: str):
+    def temp_maintenance_status(self, message: str):
         """Context manager to set the charm status temporarily.
 
         Useful around long-running operations to indicate that the charm is
