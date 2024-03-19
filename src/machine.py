@@ -4,7 +4,6 @@
 
 """Machine abstraction for the Vault charm."""
 
-
 import logging
 import os
 import shutil
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import Optional, TextIO
 
 import psutil
+from charms.operator_libs_linux.v2 import snap
 from charms.vault_k8s.v0.vault_tls import WorkloadBase
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,12 @@ class Machine(WorkloadBase):
         if pid := self._find_process(process):
             os.kill(pid, signal)
             logger.info("Sent signal %s to charm", signal)
+
+    def restart(self, process: str) -> None:
+        """Restarts all services specified in the snap."""
+        snap_cache = snap.SnapCache()
+        vault_snap = snap_cache[process]
+        vault_snap.restart()
 
     def stop(self, process: str) -> None:
         """Stop a process.
