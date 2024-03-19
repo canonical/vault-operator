@@ -7,14 +7,22 @@ from unittest.mock import MagicMock, Mock, call, patch
 import hcl  # type: ignore[import-untyped]
 import ops
 import ops.testing
-from charm import VaultOperatorCharm, config_file_content_matches
+from charm import (
+    CHARM_POLICY_NAME,
+    CHARM_POLICY_PATH,
+    MACHINE_TLS_FILE_DIRECTORY_PATH,
+    VAULT_CHARM_APPROLE_SECRET_LABEL,
+    VAULT_DEFAULT_POLICY_NAME,
+    VaultOperatorCharm,
+    config_file_content_matches,
+)
 from charms.operator_libs_linux.v2.snap import Snap, SnapState
+from charms.vault_k8s.v0.vault_client import AuditDeviceType, Token, Vault
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
-from ops.model import ActiveStatus, WaitingStatus
+from ops.model import WaitingStatus
 
 PEER_RELATION_NAME = "vault-peers"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-TLS_FILE_FOLDER_PATH = "/var/snap/vault/common/certs"
 
 
 class MockNetwork:
@@ -77,11 +85,13 @@ class TestCharm(unittest.TestCase):
     patcher_snap_cache = patch("charm.snap.SnapCache")
     patcher_vault_tls_manager = patch("charm.VaultTLSManager")
     patcher_machine = patch("charm.Machine")
+    patcher_vault = patch("charm.Vault")
 
     def setUp(self):
         self.mock_snap_cache = TestCharm.patcher_snap_cache.start()
         self.mock_vault_tls_manager = TestCharm.patcher_vault_tls_manager.start().return_value
         self.mock_machine = TestCharm.patcher_machine.start().return_value
+        self.mock_vault = TestCharm.patcher_vault.start().return_value
 
         self.model_name = "whatever"
         self.harness = ops.testing.Harness(VaultOperatorCharm)
@@ -128,7 +138,7 @@ class TestCharm(unittest.TestCase):
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
-        self, patch_get_binding
+        self, patch_get_binding: MagicMock
     ):
         self.harness.set_leader(is_leader=True)
         vault_snap = MagicMock(spec=Snap, latest=False)
@@ -151,6 +161,7 @@ class TestCharm(unittest.TestCase):
         self, patch_get_binding
     ):
         self.harness.set_leader(is_leader=True)
+        self.harness.add_storage(storage_name="certs", attach=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self._set_peer_relation()
@@ -187,6 +198,7 @@ class TestCharm(unittest.TestCase):
         self, patch_get_binding
     ):
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        self.mock_vault_tls_manager.tls_file_available_in_charm.return_value = False
         self.harness.set_leader(is_leader=False)
         self._set_peer_relation()
 
@@ -198,7 +210,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_active(
+    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_blocked(
         self,
         patch_get_binding,
     ):
@@ -213,12 +225,13 @@ class TestCharm(unittest.TestCase):
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
         )
+        self.mock_vault_tls_manager.tls_file_pushed_to_workload.return_value = True
 
         self.harness.evaluate_status()
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            ActiveStatus(),
+            ops.BlockedStatus("Waiting for Vault to be unsealed"),
         )
 
     @patch("charm.config_file_content_matches", new=Mock())
@@ -249,7 +262,9 @@ class TestCharm(unittest.TestCase):
 
         self.mock_machine.make_dir.assert_called()
         assert call(path=VAULT_STORAGE_PATH) in self.mock_machine.make_dir.call_args_list
-        assert call(path=TLS_FILE_FOLDER_PATH) in self.mock_machine.make_dir.call_args_list
+        assert (
+            call(path=MACHINE_TLS_FILE_DIRECTORY_PATH) in self.mock_machine.make_dir.call_args_list
+        )
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
@@ -312,13 +327,19 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_not_leader_and_peer_addresses_available_when_collectstatus_then_status_is_active(
+    def test_given_unit_not_leader_and_peer_addresses_available_and_vault_unsealed_when_collectstatus_then_status_is_active(
         self,
         patch_get_binding,
     ):
+        self.mock_vault.configure_mock(**{"is_sealed.return_value": False})
+
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         self.harness.set_leader(is_leader=False)
-        peer_relation_id = peer_relation_id = self._set_peer_relation()
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
@@ -334,7 +355,52 @@ class TestCharm(unittest.TestCase):
 
         self.harness.evaluate_status()
 
-        self.assertEqual(
-            self.harness.charm.unit.status,
-            ActiveStatus(),
+        self.assertEqual(self.harness.charm.unit.status, ops.model.ActiveStatus())
+
+    @patch("ops.model.Model.get_binding")
+    def test_given_unit_is_leader_when_authorize_charm_then_approle_configured_and_secrets_stored(
+        self,
+        mock_get_binding: MagicMock,
+    ):
+        self.mock_machine.exists.return_value = False
+        mock_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        peer_relation_id = self._set_peer_relation()
+        other_unit_name = f"{self.harness.charm.app.name}/1"
+        self.harness.add_relation_unit(
+            relation_id=peer_relation_id, remote_unit_name=other_unit_name
         )
+
+        self._set_other_node_api_address_in_peer_relation(
+            relation_id=peer_relation_id, unit_name=other_unit_name
+        )
+        self.harness.set_leader(is_leader=True)
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "configure_approle.return_value": "approle_id",
+                "generate_role_secret_id.return_value": "secret_id",
+            },
+        )
+
+        self.harness.run_action("authorize-charm", {"token": "test-token"})
+
+        # Assertions
+        self.mock_vault.authenticate.assert_called_once_with(Token("test-token"))
+        self.mock_vault.enable_audit_device.assert_called_once_with(
+            device_type=AuditDeviceType.FILE, path="stdout"
+        )
+        self.mock_vault.enable_approle_auth_method.assert_called_once()
+        self.mock_vault.configure_policy.assert_called_once_with(
+            policy_name=CHARM_POLICY_NAME, policy_path=CHARM_POLICY_PATH
+        )
+        self.mock_vault.configure_approle.assert_called_once_with(
+            role_name="charm", policies=[CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME]
+        )
+        self.mock_vault.generate_role_secret_id.assert_called_once_with(name="charm")
+
+        secret_content = self.harness.model.get_secret(
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL
+        ).get_content()
+
+        assert secret_content["role-id"] == "approle_id"
+        assert secret_content["secret-id"] == "secret_id"

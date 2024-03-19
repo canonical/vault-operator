@@ -7,32 +7,43 @@
 
 import logging
 from contextlib import contextmanager
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import hcl
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
+from charms.vault_k8s.v0.vault_client import (
+    AppRole,
+    AuditDeviceType,
+    Token,
+    Vault,
+    VaultClientError,
+)
 from charms.vault_k8s.v0.vault_tls import (
     File,
     VaultTLSManager,
 )
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
+from ops import ActionEvent, BlockedStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
 
 logger = logging.getLogger(__name__)
 
+CHARM_POLICY_NAME = "charm-access"
+CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
 PEER_RELATION_NAME = "vault-peers"
+VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
 VAULT_CONFIG_PATH = "/var/snap/vault/common"
 VAULT_CONFIG_FILE_NAME = "vault.hcl"
+VAULT_DEFAULT_POLICY_NAME = "default"
 VAULT_PORT = 8200
 VAULT_CLUSTER_PORT = 8201
 VAULT_SNAP_NAME = "vault"
-VAULT_SERVICE_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
 VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
@@ -120,8 +131,7 @@ class VaultOperatorCharm(CharmBase):
             self,
             scrape_configs=[
                 {
-                    "scheme": "http",
-                    "tls_config": {"insecure_skip_verify": True},
+                    "scheme": "https",
                     "metrics_path": "/v1/sys/metrics",
                     "static_configs": [{"targets": [f"*:{VAULT_PORT}"]}],
                 }
@@ -130,7 +140,7 @@ class VaultOperatorCharm(CharmBase):
         self.tls = VaultTLSManager(
             charm=self,
             workload=self.machine,
-            service_name=VAULT_SERVICE_NAME,
+            service_name=VAULT_SNAP_NAME,
             tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
         )
         self.framework.observe(self.on.install, self._configure)
@@ -139,6 +149,7 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.config_changed, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
+        self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
 
     @contextmanager
     def temp_maintenance_status(self, message: str):
@@ -152,7 +163,64 @@ class VaultOperatorCharm(CharmBase):
         yield
         self.unit.status = previous_status
 
-    def _on_collect_status(self, event: CollectStatusEvent):
+    def _on_authorize_charm_action(self, event: ActionEvent):
+        """Authorize the charm to interact with Vault."""
+        if not self.unit.is_leader():
+            event.fail("This action can only be run by the leader unit")
+            return
+        logger.info("Authorizing the charm to interact with Vault")
+        if not self._api_address:
+            event.fail("API address is not available.")
+            return
+        if not self.tls.tls_file_available_in_charm(File.CA):
+            event.fail("CA certificate is not available in the charm. Something is wrong.")
+            return
+        token = event.params["token"]
+        vault = self._get_vault_client()
+        vault.authenticate(Token(token))
+        try:
+            vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
+            vault.enable_approle_auth_method()
+            vault.configure_policy(policy_name=CHARM_POLICY_NAME, policy_path=CHARM_POLICY_PATH)
+            role_id = vault.configure_approle(
+                role_name="charm",
+                policies=[CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
+            )
+            vault_secret_id = vault.generate_role_secret_id(name="charm")
+            self._create_approle_secret(role_id, vault_secret_id)
+        except VaultClientError as e:
+            logger.exception("Vault returned an error while authorizing the charm")
+            event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
+            return
+        self._configure(event)
+
+    def _create_approle_secret(self, role_id: str, secret_id: str) -> Secret:
+        secret_content = {"role-id": role_id, "secret-id": secret_id}
+        try:
+            secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+        except SecretNotFoundError:
+            # The secret doesn't exist yet, so we can continue like normal.
+            return self.app.add_secret(
+                secret_content,
+                label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+            )
+
+        # The secret already exists, so we will update it and log a warning.
+        logger.warning(
+            f"Secret with label `{VAULT_CHARM_APPROLE_SECRET_LABEL}` already exists. Is the charm already authorized?"
+        )
+        secret.set_content(secret_content)
+        return secret
+
+    def _get_vault_client(self) -> Vault:
+        assert self._api_address
+        assert self.tls.tls_file_available_in_charm(File.CA)
+        return Vault(
+            url=self._api_address,
+            ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
+        )
+
+    def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
         """Handle the collect status event."""
         if not self._is_peer_relation_created():
             event.add_status(WaitingStatus("Waiting for peer relation"))
@@ -166,34 +234,83 @@ class VaultOperatorCharm(CharmBase):
         if not self.tls.tls_file_pushed_to_workload(File.CA):
             event.add_status(WaitingStatus("Waiting for CA certificate in workload"))
             return
+        if not self._api_address:
+            event.add_status(WaitingStatus("No address received from Juju yet"))
+            return
+        if not self.tls.tls_file_available_in_charm(File.CA):
+            event.add_status(WaitingStatus("Certificate is unavailable in the charm"))
+            return
         if not self._is_vault_service_started():
             event.add_status(WaitingStatus("Waiting for Vault service to start"))
             return
+        vault = self._get_vault_client()
+        if not vault.is_api_available():
+            event.add_status(WaitingStatus("Vault API is not yet available"))
+            return
+        if not vault.is_initialized():
+            event.add_status(BlockedStatus("Waiting for Vault to be initialized"))
+            return
+        if vault.is_sealed():
+            event.add_status(BlockedStatus("Waiting for Vault to be unsealed"))
+            return
+        if not self._get_vault_approle_secret():
+            event.add_status(
+                BlockedStatus("Waiting for charm to be authorized (see `authorize-charm` action)")
+            )
+            return
         event.add_status(ActiveStatus())
 
-    def _configure(self, _):
+    def _configure(self, _):  # noqa: C901
         """Handle Vault installation.
 
         This includes:
           - Installing the Vault snap
           - Generating the Vault config file
         """
+        self._create_backend_directory()
+        self._create_certs_directory()
         self._install_vault_snap()
         if not self._is_peer_relation_created():
             return
         if not self._bind_address:
             return
-        if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
-            return
-        if not self.unit.is_leader() and not self.tls.ca_certificate_is_saved():
-            return
-        self._create_backend_directory()
-        self._create_certs_directory()
+        if not self.unit.is_leader():
+            if len(self._other_peer_node_api_addresses()) == 0:
+                return
+            if not self.tls.ca_certificate_is_saved():
+                return
         self.tls.configure_certificates(self._bind_address)
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self.tls.send_ca_cert()
+
+        if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
+            return
+        vault = self._get_vault_client()
+        if not vault.is_api_available():
+            return
+        if not vault.is_initialized():
+            return
+        if vault.is_sealed():
+            return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+
+        if vault.is_active() and not vault.is_raft_cluster_healthy():
+            logger.warning("Raft cluster is not healthy: %s", vault.get_raft_cluster_state())
+
+    def _get_vault_approle_secret(self) -> Optional[Tuple[str, str]]:
+        """Get the approle secret."""
+        try:
+            secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+        except SecretNotFoundError:
+            return None
+        content = secret.peek_content()
+        if not (role_id := content.get("role-id")) or not (secret_id := content.get("secret-id")):
+            return None
+        return (role_id, secret_id)
 
     def _install_vault_snap(self) -> None:
         """Installs the Vault snap in the machine."""
@@ -223,7 +340,7 @@ class VaultOperatorCharm(CharmBase):
         snap_cache = snap.SnapCache()
         vault_snap = snap_cache[VAULT_SNAP_NAME]
         vault_snap.start(services=["vaultd"])
-        logger.info("Vault service started")
+        logger.debug("Vault service started")
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
@@ -325,23 +442,23 @@ class VaultOperatorCharm(CharmBase):
 
     @property
     def _api_address(self) -> Optional[str]:
-        """Returns the IP with the http schema and vault port.
+        """Returns the IP with the https schema and vault port.
 
-        Example: "http://1.2.3.4:8200"
+        Example: "https://1.2.3.4:8200"
         """
         if not self._bind_address:
             return None
-        return f"http://{self._bind_address}:{VAULT_PORT}"
+        return f"https://{self._bind_address}:{VAULT_PORT}"
 
     @property
     def _cluster_address(self) -> Optional[str]:
-        """Return the IP with the http schema and vault port.
+        """Return the IP with the https schema and vault port.
 
-        Example: "http://1.2.3.4:8201"
+        Example: "https://1.2.3.4:8201"
         """
         if not self._bind_address:
             return None
-        return f"http://{self._bind_address}:{VAULT_CLUSTER_PORT}"
+        return f"https://{self._bind_address}:{VAULT_CLUSTER_PORT}"
 
     @property
     def _node_id(self) -> str:
