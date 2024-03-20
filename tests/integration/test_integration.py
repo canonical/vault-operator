@@ -71,15 +71,12 @@ async def validate_vault_status(
         assert response.status_code == expected_vault_status_code
 
 
-async def get_leader(app: Application) -> Unit:
-    leader = None
+async def get_leader(app: Application) -> Unit | None:
     for unit in app.units:
         assert isinstance(unit, Unit)
         if await unit.is_leader_from_status():
-            leader = unit
-            break
-    assert isinstance(leader, Unit)
-    return leader
+            return unit
+    return None
 
 
 @pytest.fixture(scope="module")
@@ -193,6 +190,7 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     app = ops_test.model.applications[APP_NAME]
     assert isinstance(app, Application)
     leader = await get_leader(app)
+    assert leader
 
     leader_ip = leader.public_address
     vault_endpoint = f"https://{leader_ip}:8200"

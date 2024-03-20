@@ -192,7 +192,6 @@ class VaultOperatorCharm(CharmBase):
             logger.exception("Vault returned an error while authorizing the charm")
             event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
             return
-        self._configure(event)
 
     def _create_approle_secret(self, role_id: str, secret_id: str) -> Secret:
         secret_content = {"role-id": role_id, "secret-id": secret_id}
