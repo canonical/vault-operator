@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import MagicMock, Mock, call, patch
 
-import hcl  # type: ignore[import-untyped]
+import hcl
 import ops
 import ops.testing
 from charm import VaultOperatorCharm, config_file_content_matches
