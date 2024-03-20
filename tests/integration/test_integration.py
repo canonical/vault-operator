@@ -138,7 +138,8 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
         status="active",
         timeout=1000,
     )
-    unit_ip = ops_test.model.units.get(f"{APP_NAME}/0").public_address
+    assert isinstance(unit := ops_test.model.units.get(f"{APP_NAME}/0"), Unit)
+    unit_ip = unit.public_address
     vault_endpoint = f"https://{unit_ip}:8200"
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
