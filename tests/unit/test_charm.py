@@ -19,7 +19,6 @@ from charm import (
 from charms.operator_libs_linux.v2.snap import Snap, SnapState
 from charms.vault_k8s.v0.vault_client import AuditDeviceType, Token, Vault
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
-from ops.model import WaitingStatus
 
 PEER_RELATION_NAME = "vault-peers"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
@@ -190,7 +189,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            WaitingStatus("Waiting for bind address"),
+            ops.WaitingStatus("Waiting for bind address"),
         )
 
     @patch("ops.model.Model.get_binding")
@@ -206,7 +205,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            WaitingStatus("Waiting for other units to provide their addresses"),
+            ops.WaitingStatus("Waiting for other units to provide their addresses"),
         )
 
     @patch("ops.model.Model.get_binding")
