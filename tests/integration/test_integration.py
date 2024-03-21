@@ -90,6 +90,7 @@ async def build_and_deploy(ops_test: OpsTest):
         application_name=APP_NAME,
         trust=True,
         num_units=NUM_VAULT_UNITS,
+        config={"common_name": "example.com"},
     )
 
 
@@ -122,7 +123,7 @@ async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         trust=True,
-        channel="beta",
+        channel="stable",
     )
 
 
