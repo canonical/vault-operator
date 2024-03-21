@@ -25,7 +25,7 @@ from charms.vault_k8s.v0.vault_tls import (
 )
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
-from ops import ActionEvent, BlockedStatus, Secret, SecretNotFoundError
+from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
@@ -177,6 +177,9 @@ class VaultOperatorCharm(CharmBase):
             return
         token = event.params["token"]
         vault = self._get_vault_client()
+        if not vault:
+            event.fail("Failed to initialize the Vault client")
+            return
         vault.authenticate(Token(token))
         try:
             vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
@@ -211,9 +214,11 @@ class VaultOperatorCharm(CharmBase):
         secret.set_content(secret_content)
         return secret
 
-    def _get_vault_client(self) -> Vault:
-        assert self._api_address
-        assert self.tls.tls_file_available_in_charm(File.CA)
+    def _get_vault_client(self) -> Vault | None:
+        if not self._api_address:
+            return None
+        if not self.tls.tls_file_available_in_charm(File.CA):
+            return None
         return Vault(
             url=self._api_address,
             ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
@@ -243,6 +248,9 @@ class VaultOperatorCharm(CharmBase):
             event.add_status(WaitingStatus("Waiting for Vault service to start"))
             return
         vault = self._get_vault_client()
+        if not vault:
+            event.add_status(ErrorStatus("Failed to initialize the Vault client"))
+            return
         if not vault.is_api_available():
             event.add_status(WaitingStatus("Vault API is not yet available"))
             return
@@ -287,11 +295,12 @@ class VaultOperatorCharm(CharmBase):
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
             return
         vault = self._get_vault_client()
-        if not vault.is_api_available():
-            return
-        if not vault.is_initialized():
-            return
-        if vault.is_sealed():
+        if (
+            not vault
+            or not vault.is_api_available()
+            or not vault.is_initialized()
+            or vault.is_sealed()
+        ):
             return
         if not (approle_auth := self._get_vault_approle_secret()):
             return
