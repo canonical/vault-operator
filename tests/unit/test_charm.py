@@ -13,6 +13,7 @@ from charm import (
     VAULT_CHARM_POLICY_NAME,
     VAULT_CHARM_POLICY_PATH,
     VAULT_DEFAULT_POLICY_NAME,
+    VAULT_PKI_CSR_SECRET_LABEL,
     VaultOperatorCharm,
     config_file_content_matches,
 )
@@ -26,7 +27,6 @@ from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
 
 PEER_RELATION_NAME = "vault-peers"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
 TLS_CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
 
@@ -441,6 +441,10 @@ class TestCharm(unittest.TestCase):
         self._set_peer_relation()
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
         csr = "some csr content"
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
         self.mock_vault.configure_mock(
             spec=Vault,
             **{
@@ -476,6 +480,10 @@ class TestCharm(unittest.TestCase):
     ):
         peer_relation_id = self._set_peer_relation()
         patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
         self.mock_vault.configure_mock(
             spec=Vault,
             **{

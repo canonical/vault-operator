@@ -356,6 +356,9 @@ class VaultOperatorCharm(CharmBase):
         ):
             logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
             return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
         if not self._tls_certificates_pki_relation_created():
             logger.debug("TLS Certificates PKI relation not created, skipping")
             return
@@ -394,6 +397,9 @@ class VaultOperatorCharm(CharmBase):
         ):
             logger.debug("Vault is not ready to handle a vault-pki certificate request")
             return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
         common_name = self._get_config_common_name()
         if not common_name:
             logger.error("Common name is not set in the charm config")
