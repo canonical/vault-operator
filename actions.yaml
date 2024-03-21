@@ -7,6 +7,7 @@ authorize-charm:
     token:
       type: string
       description: >-
-        A token for Vault that can create new policies. Used to create the app
-        role and policy for the charm.
+        A token for Vault that can create new policies, such as the root token
+        that is provided upon initializing Vault. Used to create the app role
+        and policy for the charm. It is not stored by the charm.
   required: [token]
