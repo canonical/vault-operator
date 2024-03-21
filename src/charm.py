@@ -57,7 +57,7 @@ VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 VAULT_PKI_MOUNT = "charm-pki"
-VAULT_PKI_ROLE = "charm"
+VAULT_PKI_ROLE = "charm-pki"
 
 
 def render_vault_config_file(

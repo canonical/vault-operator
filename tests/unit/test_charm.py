@@ -532,5 +532,5 @@ class TestCharm(unittest.TestCase):
             mount="charm-pki",
         )
         self.mock_vault.create_pki_charm_role.assert_called_with(
-            allowed_domains="vault", mount="charm-pki", role="charm"
+            allowed_domains="vault", mount="charm-pki", role="charm-pki"
         )
