@@ -26,6 +26,10 @@ storage:
   vault:
     type: filesystem
     location: /var/snap/vault/common
+  certs:
+    type: filesystem
+    minimum-size: 5M
+    location: /var/snap/vault/common/certs
 
 peers:
   vault-peers:

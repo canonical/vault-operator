@@ -4,11 +4,11 @@ storage "raft" {
   node_id = "whatever-vault-k8s/0"
   # The order is different from in "config_with_raft_peers.hcl"
   retry_join {
-    leader_api_addr = "http://127.0.0.2:8200"
+    leader_api_addr = "https://127.0.0.2:8200"
     leader_ca_cert_file = "/path/to/ca1"
   }
    retry_join {
-    leader_api_addr = "http://127.0.0.1:8200"
+    leader_api_addr = "https://127.0.0.1:8200"
     leader_ca_cert_file = "/path/to/ca1"
   }
 

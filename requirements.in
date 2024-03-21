@@ -1,9 +1,11 @@
+cosl
+cryptography
 jinja2
+jsonschema
 ops
+psutil
 pyhcl
 # cos-agent requires pydantic<2
 pydantic<2
-cosl
-psutil
-cryptography
-jsonschema
+# vault_client requirements
+hvac
