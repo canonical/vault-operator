@@ -32,22 +32,22 @@ from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
 
 logger = logging.getLogger(__name__)
 
-CHARM_POLICY_NAME = "charm-access"
-CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
+MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 PEER_RELATION_NAME = "vault-peers"
 VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
-VAULT_CONFIG_PATH = "/var/snap/vault/common"
+VAULT_CHARM_POLICY_NAME = "charm-access"
+VAULT_CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
+VAULT_CLUSTER_PORT = 8201
 VAULT_CONFIG_FILE_NAME = "vault.hcl"
+VAULT_CONFIG_PATH = "/var/snap/vault/common"
 VAULT_DEFAULT_POLICY_NAME = "default"
 VAULT_PORT = 8200
-VAULT_CLUSTER_PORT = 8201
-VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_CHANNEL = "1.15/beta"
+VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 
 
 def render_vault_config_file(
@@ -184,10 +184,12 @@ class VaultOperatorCharm(CharmBase):
         try:
             vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
             vault.enable_approle_auth_method()
-            vault.configure_policy(policy_name=CHARM_POLICY_NAME, policy_path=CHARM_POLICY_PATH)
+            vault.configure_policy(
+                policy_name=VAULT_CHARM_POLICY_NAME, policy_path=VAULT_CHARM_POLICY_PATH
+            )
             role_id = vault.configure_approle(
                 role_name="charm",
-                policies=[CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
+                policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
             )
             vault_secret_id = vault.generate_role_secret_id(name="charm")
             self._create_approle_secret(role_id, vault_secret_id)

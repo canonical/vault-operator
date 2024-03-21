@@ -8,10 +8,10 @@ import hcl
 import ops
 import ops.testing
 from charm import (
-    CHARM_POLICY_NAME,
-    CHARM_POLICY_PATH,
     MACHINE_TLS_FILE_DIRECTORY_PATH,
     VAULT_CHARM_APPROLE_SECRET_LABEL,
+    VAULT_CHARM_POLICY_NAME,
+    VAULT_CHARM_POLICY_PATH,
     VAULT_DEFAULT_POLICY_NAME,
     VaultOperatorCharm,
     config_file_content_matches,
@@ -390,10 +390,10 @@ class TestCharm(unittest.TestCase):
         )
         self.mock_vault.enable_approle_auth_method.assert_called_once()
         self.mock_vault.configure_policy.assert_called_once_with(
-            policy_name=CHARM_POLICY_NAME, policy_path=CHARM_POLICY_PATH
+            policy_name=VAULT_CHARM_POLICY_NAME, policy_path=VAULT_CHARM_POLICY_PATH
         )
         self.mock_vault.configure_approle.assert_called_once_with(
-            role_name="charm", policies=[CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME]
+            role_name="charm", policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME]
         )
         self.mock_vault.generate_role_secret_id.assert_called_once_with(name="charm")
 
