@@ -79,7 +79,7 @@ async def get_leader(app: Application) -> Unit | None:
             return unit
     return None
 
-async def run_get_certificate_action(ops_test) -> dict:
+async def run_get_certificate_action(ops_test: OpsTest) -> dict:
     """Run `get-certificate` on the `tls-requirer-requirer/0` unit.
 
     Args:
@@ -138,7 +138,6 @@ async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
     await ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
-        trust=True,
         channel="stable",
     )
 
@@ -154,7 +153,6 @@ async def deploy_tls_certificates_requirer_operator(ops_test: OpsTest):
     await ops_test.model.deploy(
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
         application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
-        trust=True,
         channel="stable",
         config={"common_name": "test.example.com"},
     )
