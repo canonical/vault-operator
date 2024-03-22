@@ -14,6 +14,8 @@ from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
 from charms.tls_certificates_interface.v3.tls_certificates import (
     CertificateAvailableEvent,
+    CertificateCreationRequestEvent,
+    TLSCertificatesProvidesV3,
     TLSCertificatesRequiresV3,
 )
 from charms.vault_k8s.v0.vault_client import (
@@ -42,6 +44,7 @@ CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
 MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 PEER_RELATION_NAME = "vault-peers"
+PKI_RELATION_NAME = "vault-pki"
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
 VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
 VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
@@ -153,6 +156,7 @@ class VaultOperatorCharm(CharmBase):
             service_name=VAULT_SNAP_NAME,
             tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
         )
+        self.vault_pki = TLSCertificatesProvidesV3(self, PKI_RELATION_NAME)
         self.tls_certificates_pki = TLSCertificatesRequiresV3(
             self, TLS_CERTIFICATES_PKI_RELATION_NAME
         )
@@ -170,6 +174,10 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(
             self.tls_certificates_pki.on.certificate_available,
             self._on_tls_certificate_pki_certificate_available,
+        )
+        self.framework.observe(
+            self.vault_pki.on.certificate_creation_request,
+            self._on_vault_pki_certificate_creation_request,
         )
 
     @contextmanager
@@ -315,6 +323,7 @@ class VaultOperatorCharm(CharmBase):
         self._set_peer_relation_node_api_address()
         self._configure_pki_secrets_engine()
         self._add_intermediate_ca_certificate_to_pki_secrets_engine()
+        self._sync_vault_pki()
         self.tls.send_ca_cert()
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
@@ -341,6 +350,73 @@ class VaultOperatorCharm(CharmBase):
     def _on_tls_certificate_pki_certificate_available(self, _: CertificateAvailableEvent):
         """Handle the tls-certificates-pki certificate available event."""
         self._add_intermediate_ca_certificate_to_pki_secrets_engine()
+
+    def _on_vault_pki_certificate_creation_request(
+        self, event: CertificateCreationRequestEvent
+    ) -> None:
+        """Handle the vault-pki certificate creation request event."""
+        self._generate_pki_certificate_for_requirer(
+            event.certificate_signing_request, event.relation_id
+        )
+
+    def _generate_pki_certificate_for_requirer(self, csr: str, relation_id: int):
+        """Generate a PKI certificate for a TLS requirer."""
+        if not self.unit.is_leader():
+            logger.debug("Only leader unit can handle a vault-pki certificate request")
+            return
+        if not self._tls_certificates_pki_relation_created():
+            print(3)
+            logger.debug("TLS Certificates PKI relation not created")
+            return
+        vault = self._get_vault_client()
+        if (
+            not vault
+            or not vault.is_api_available()
+            or not vault.is_initialized()
+            or vault.is_sealed()
+        ):
+            print(5)
+            return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        common_name = self._get_config_common_name()
+        if not common_name:
+            logger.error("Common name is not set in the charm config")
+            return
+        if not vault.is_pki_role_created(role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT):
+            logger.debug("PKI role not created")
+            return
+        requested_csr = csr
+        requested_common_name = get_common_name_from_csr(requested_csr)
+        certificate = vault.sign_pki_certificate_signing_request(
+            mount=VAULT_PKI_MOUNT,
+            role=VAULT_PKI_ROLE,
+            csr=requested_csr,
+            common_name=requested_common_name,
+        )
+        if not certificate:
+            logger.debug("Failed to sign the certificate")
+            return
+        self.vault_pki.set_relation_certificate(
+            relation_id=relation_id,
+            certificate=certificate.certificate,
+            certificate_signing_request=csr,
+            ca=certificate.ca,
+            chain=certificate.chain,
+        )
+
+    def _sync_vault_pki(self) -> None:
+        """Goes through all the vault-pki relations and sends necessary TLS certificate."""
+        for relation in self.model.relations[PKI_RELATION_NAME]:
+            outstanding_requests = self.vault_pki.get_outstanding_certificate_requests(
+                relation_id=relation.id
+            )
+            for request in outstanding_requests:
+                self._generate_pki_certificate_for_requirer(
+                    csr=request.csr,
+                    relation_id=relation.id,
+                )
 
     def _configure_pki_secrets_engine(self) -> None:
         """Configure the PKI secrets engine."""
@@ -656,6 +732,11 @@ def get_common_name_from_certificate(certificate: str) -> str:
     return str(
         loaded_certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value  # type: ignore[reportAttributeAccessIssue]
     )
+
+def get_common_name_from_csr(csr: str) -> str:
+    """Get the common name from a CSR."""
+    loaded_csr = x509.load_pem_x509_csr(csr.encode("utf-8"))
+    return str(loaded_csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value)  # type: ignore[reportAttributeAccessIssue]
 
 if __name__ == "__main__":  # pragma: nocover
     main(VaultOperatorCharm)

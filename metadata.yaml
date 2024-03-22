@@ -36,6 +36,8 @@ peers:
     interface: vault-peer
 
 provides:
+  vault-pki:
+    interface: tls-certificates
   cos-agent:
     interface: cos_agent
   send-ca-cert:

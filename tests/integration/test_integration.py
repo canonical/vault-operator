@@ -23,6 +23,7 @@ APP_NAME = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
+VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 NUM_VAULT_UNITS = 5
 
 # Vault status codes, see
@@ -78,6 +79,21 @@ async def get_leader(app: Application) -> Unit | None:
             return unit
     return None
 
+async def run_get_certificate_action(ops_test) -> dict:
+    """Run `get-certificate` on the `tls-requirer-requirer/0` unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+
+    Returns:
+        dict: Action output
+    """
+    tls_requirer_unit = ops_test.model.units[f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}/0"]
+    action = await tls_requirer_unit.run_action(
+        action_name="get-certificate",
+    )
+    action_output = await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=240)
+    return action_output
 
 @pytest.fixture(scope="module")
 @pytest.mark.abort_on_fail
@@ -126,6 +142,22 @@ async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
         channel="stable",
     )
 
+@pytest.mark.abort_on_fail
+@pytest.fixture(scope="module")
+async def deploy_tls_certificates_requirer_operator(ops_test: OpsTest):
+    """Deploy TLS Certificates Requirer Operator.
+
+    Args:
+        ops_test: Ops test Framework.
+    """
+    assert ops_test.model
+    await ops_test.model.deploy(
+        VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        trust=True,
+        channel="stable",
+        config={"common_name": "test.example.com"},
+    )
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
@@ -279,3 +311,22 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
         status="active",
         timeout=1000,
     )
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
+    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator, deploy_tls_certificates_requirer_operator
+):
+    assert ops_test.model
+    await ops_test.model.integrate(
+        relation1=f"{APP_NAME}:vault-pki",
+        relation2=f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}:certificates"
+        )
+    await ops_test.model.wait_for_idle(
+            apps=[APP_NAME, VAULT_PKI_REQUIRER_APPLICATION_NAME],
+            status="active",
+            timeout=1000,
+        )
+    action_output = await run_get_certificate_action(ops_test)
+    assert action_output["certificate"] is not None
+    assert action_output["ca-certificate"] is not None
+    assert action_output["csr"] is not None
