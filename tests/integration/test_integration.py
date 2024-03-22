@@ -3,13 +3,14 @@
 # See LICENSE file for licensing details.
 
 
+import asyncio
 import logging
 import os
 from os.path import abspath
 from pathlib import Path
 from typing import List
 
-import hvac  # type: ignore[import-untyped]
+import hvac
 import pytest
 import yaml
 from juju.application import Application
@@ -24,7 +25,7 @@ GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
-NUM_VAULT_UNITS = 5
+NUM_VAULT_UNITS = 3
 
 # Vault status codes, see
 # https://developer.hashicorp.com/vault/api-docs/system/health for more details
@@ -111,57 +112,53 @@ async def build_and_deploy(ops_test: OpsTest):
         config={"common_name": "example.com"},
     )
 
-
-@pytest.mark.abort_on_fail
 @pytest.fixture(scope="module")
-async def deploy_grafana_agent(ops_test: OpsTest) -> None:
-    """Deploys grafana-agent-operator.
-
-    Args:
-        ops_test: Ops test Framework.
-    """
-    assert ops_test.model
-    await ops_test.model.deploy(
-        GRAFANA_AGENT_APPLICATION_NAME,
-        application_name=GRAFANA_AGENT_APPLICATION_NAME,
-        trust=True,
-    )
-
-
 @pytest.mark.abort_on_fail
-@pytest.fixture(scope="module")
-async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
-    """Deploy Self Signed Certificates Operator.
-
-    Args:
-        ops_test: Ops test Framework.
-    """
+async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy):
     assert ops_test.model
-    await ops_test.model.deploy(
+    deploy_self_signed_certificates = ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
+        trust=True,
         channel="stable",
     )
-
-@pytest.mark.abort_on_fail
-@pytest.fixture(scope="module")
-async def deploy_tls_certificates_requirer_operator(ops_test: OpsTest):
-    """Deploy TLS Certificates Requirer Operator.
-
-    Args:
-        ops_test: Ops test Framework.
-    """
-    assert ops_test.model
-    await ops_test.model.deploy(
+    deploy_vault_pki_requirer = ops_test.model.deploy(
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
         application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
         channel="stable",
         config={"common_name": "test.example.com"},
     )
+    deploy_grafana_agent = ops_test.model.deploy(
+        GRAFANA_AGENT_APPLICATION_NAME,
+        application_name=GRAFANA_AGENT_APPLICATION_NAME,
+        trust=True,
+    )
+    deployed_apps = [
+        SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
+        VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        GRAFANA_AGENT_APPLICATION_NAME,
+    ]
+    await asyncio.gather(
+        deploy_self_signed_certificates,
+        deploy_vault_pki_requirer,
+        deploy_grafana_agent
+    )
+    await ops_test.model.wait_for_idle(
+        apps=deployed_apps,
+        status="active",
+        timeout=1000,
+        wait_for_exact_units=1,
+    )
+    yield
+    remove_coroutines = [
+        ops_test.model.remove_application(app_name=app_name) for app_name in deployed_apps
+    ]
+    await asyncio.gather(*remove_coroutines)
+
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
-    ops_test: OpsTest, build_and_deploy
+    ops_test: OpsTest, deploy_requiring_charms
 ):
     assert ops_test.model
     async with ops_test.fast_forward():
@@ -176,7 +173,7 @@ async def test_given_charm_build_when_deploy_then_status_blocked(
 
 @pytest.mark.abort_on_fail
 async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(
-    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
+    ops_test: OpsTest, deploy_requiring_charms
 ):
     """To test that Vault is actually running when the charm is active."""
     assert ops_test.model
@@ -283,7 +280,7 @@ async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str
 
 @pytest.mark.abort_on_fail
 async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_status_is_active(
-    ops_test: OpsTest, build_and_deploy, deploy_grafana_agent
+    ops_test: OpsTest, deploy_requiring_charms
 ):
     assert ops_test.model
     await ops_test.model.integrate(
@@ -299,7 +296,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
 
 @pytest.mark.abort_on_fail
 async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
-    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
+    ops_test: OpsTest, deploy_requiring_charms
 ):
     assert ops_test.model
     await ops_test.model.integrate(
@@ -314,7 +311,7 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
 
 @pytest.mark.abort_on_fail
 async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
-    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator, deploy_tls_certificates_requirer_operator
+    ops_test: OpsTest, deploy_requiring_charms
 ):
     assert ops_test.model
     await ops_test.model.integrate(
