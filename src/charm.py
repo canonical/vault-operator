@@ -365,7 +365,6 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("Only leader unit can handle a vault-pki certificate request")
             return
         if not self._tls_certificates_pki_relation_created():
-            print(3)
             logger.debug("TLS Certificates PKI relation not created")
             return
         vault = self._get_vault_client()
@@ -375,7 +374,6 @@ class VaultOperatorCharm(CharmBase):
             or not vault.is_initialized()
             or vault.is_sealed()
         ):
-            print(5)
             return
         if not (approle_auth := self._get_vault_approle_secret()):
             return
