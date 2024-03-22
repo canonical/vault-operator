@@ -314,7 +314,7 @@ class VaultOperatorCharm(CharmBase):
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self._configure_pki_secrets_engine()
-        self._add_ca_certificate_to_pki_secrets_engine()
+        self._add_intermediate_ca_certificate_to_pki_secrets_engine()
         self.tls.send_ca_cert()
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
@@ -340,7 +340,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _on_tls_certificate_pki_certificate_available(self, _: CertificateAvailableEvent):
         """Handle the tls-certificates-pki certificate available event."""
-        self._add_ca_certificate_to_pki_secrets_engine()
+        self._add_intermediate_ca_certificate_to_pki_secrets_engine()
 
     def _configure_pki_secrets_engine(self) -> None:
         """Configure the PKI secrets engine."""
@@ -383,7 +383,7 @@ class VaultOperatorCharm(CharmBase):
         intermediate_ca_common_name = get_common_name_from_certificate(intermediate_ca)
         return intermediate_ca_common_name == common_name
 
-    def _add_ca_certificate_to_pki_secrets_engine(self) -> None:
+    def _add_intermediate_ca_certificate_to_pki_secrets_engine(self) -> None:
         """Add the CA certificate to the PKI secrets engine."""
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request")
@@ -404,7 +404,7 @@ class VaultOperatorCharm(CharmBase):
         if not common_name:
             logger.error("Common name is not set in the charm config")
             return
-        certificate = self._get_pki_ca_certificate()
+        certificate = self._get_pki_intermediate_ca_certificate()
         if not certificate:
             logger.debug("No certificate available")
             return
@@ -417,7 +417,7 @@ class VaultOperatorCharm(CharmBase):
                 role=VAULT_PKI_ROLE,
             )
 
-    def _get_pki_ca_certificate(self) -> Optional[str]:
+    def _get_pki_intermediate_ca_certificate(self) -> Optional[str]:
         """Return the PKI CA certificate provided by the TLS provider.
 
         Validate that the CSR matches the one in secrets.
