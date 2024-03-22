@@ -90,6 +90,7 @@ async def build_and_deploy(ops_test: OpsTest):
         application_name=APP_NAME,
         trust=True,
         num_units=NUM_VAULT_UNITS,
+        config={"common_name": "example.com"},
     )
 
 
@@ -122,7 +123,7 @@ async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         trust=True,
-        channel="beta",
+        channel="stable",
     )
 
 
@@ -263,3 +264,18 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
             status="active",
             timeout=1000,
         )
+
+@pytest.mark.abort_on_fail
+async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
+    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
+):
+    assert ops_test.model
+    await ops_test.model.integrate(
+        relation1=f"{APP_NAME}:tls-certificates-pki",
+        relation2=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
