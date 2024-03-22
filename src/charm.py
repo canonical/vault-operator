@@ -406,15 +406,12 @@ class VaultOperatorCharm(CharmBase):
 
     def _sync_vault_pki(self) -> None:
         """Goes through all the vault-pki relations and sends necessary TLS certificate."""
-        for relation in self.model.relations[PKI_RELATION_NAME]:
-            outstanding_requests = self.vault_pki.get_outstanding_certificate_requests(
-                relation_id=relation.id
+        outstanding_requests = self.vault_pki.get_outstanding_certificate_requests()
+        for request in outstanding_requests:
+            self._generate_pki_certificate_for_requirer(
+                csr=request.csr,
+                relation_id=request.relation_id,
             )
-            for request in outstanding_requests:
-                self._generate_pki_certificate_for_requirer(
-                    csr=request.csr,
-                    relation_id=relation.id,
-                )
 
     def _configure_pki_secrets_engine(self) -> None:
         """Configure the PKI secrets engine."""
