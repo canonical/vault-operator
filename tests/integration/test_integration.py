@@ -6,6 +6,7 @@
 import asyncio
 import logging
 import os
+import time
 from os.path import abspath
 from pathlib import Path
 from typing import List
@@ -95,11 +96,20 @@ async def run_get_certificate_action(ops_test: OpsTest) -> dict:
     action = await tls_requirer_unit.run_action(
         action_name="get-certificate",
     )
-    action_output = await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=240)
+    action_output = await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=30)
     return action_output
 
+async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
+    start_time = time.time()
+    timeout = 300
+    while time.time() - start_time < timeout:
+        action_output = await run_get_certificate_action(ops_test)
+        if action_output.get("certificate", None) is not None:
+            return
+        time.sleep(10)
+    raise TimeoutError("Timed out waiting for certificate to be provided.")
+
 @pytest.fixture(scope="module")
-@pytest.mark.abort_on_fail
 async def build_and_deploy(ops_test: OpsTest):
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
@@ -113,7 +123,6 @@ async def build_and_deploy(ops_test: OpsTest):
     )
 
 @pytest.fixture(scope="module")
-@pytest.mark.abort_on_fail
 async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: None):
     assert ops_test.model
     deploy_self_signed_certificates = ops_test.model.deploy(
@@ -328,7 +337,8 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
             status="active",
             timeout=1000,
         )
+    await wait_for_certificate_to_be_provided(ops_test)
     action_output = await run_get_certificate_action(ops_test)
-    assert action_output["certificate"] is not None
-    assert action_output["ca-certificate"] is not None
-    assert action_output["csr"] is not None
+    assert action_output.get("certificate", None) is not None
+    assert action_output.get("ca-certificate", None) is not None
+    assert action_output.get("csr", None) is not None
