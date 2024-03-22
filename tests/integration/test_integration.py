@@ -88,7 +88,9 @@ async def run_get_certificate_action(ops_test: OpsTest) -> dict:
     Returns:
         dict: Action output
     """
+    assert ops_test.model
     tls_requirer_unit = ops_test.model.units[f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}/0"]
+    assert isinstance(tls_requirer_unit, Unit)
     action = await tls_requirer_unit.run_action(
         action_name="get-certificate",
     )
