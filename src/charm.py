@@ -257,6 +257,16 @@ class VaultOperatorCharm(CharmBase):
 
     def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
         """Handle the collect status event."""
+        if (
+            self._tls_certificates_pki_relation_created()
+            and not self._common_name_config_is_valid()
+        ):
+            event.add_status(
+                BlockedStatus(
+                    "Common name is not set in the charm config, cannot configure PKI secrets engine"
+                )
+            )
+            return
         if not self._is_peer_relation_created():
             event.add_status(WaitingStatus("Waiting for peer relation"))
             return
