@@ -324,7 +324,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
 
 @pytest.mark.abort_on_fail
 async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_then_status_is_active(
-    self, ops_test: OpsTest, deploy_requiring_charms: None
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model
     await ops_test.model.integrate(
