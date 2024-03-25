@@ -4,7 +4,6 @@
 
 
 import logging
-import os
 from os.path import abspath
 from pathlib import Path
 from typing import List
@@ -174,12 +173,12 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
     vault_endpoint = f"https://{unit_ip}:8200"
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
-    with open("ca_file.txt", mode="w+") as ca_file:
+    ca_file_location = ops_test.tmp_path / "ca_file.txt"
+    with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
-    client = hvac.Client(url=vault_endpoint, verify=abspath(ca_file.name))
+    client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
     response = client.sys.read_health_status()
     assert response.status_code == VAULT_STATUS_NOT_INITIALIZED
-    os.remove("ca_file.txt")
 
 
 @pytest.mark.abort_on_fail
@@ -198,9 +197,10 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
 
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
-    with open("ca_file.txt", mode="w+") as ca_file:
+    ca_file_location = ops_test.tmp_path / "ca_file.txt"
+    with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
-    client = hvac.Client(url=vault_endpoint, verify=abspath(ca_file.name))
+    client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
     await validate_vault_status(VAULT_STATUS_NOT_INITIALIZED, ops_test, client)
 
     init_output = client.sys.initialize(secret_shares=1, secret_threshold=1)
@@ -218,7 +218,6 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
             status="active",
             timeout=1000,
         )
-    os.remove("ca_file.txt")
 
 
 async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str):
@@ -264,6 +263,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
             status="active",
             timeout=1000,
         )
+
 
 @pytest.mark.abort_on_fail
 async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
