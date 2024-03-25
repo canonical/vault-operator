@@ -3,13 +3,15 @@
 # See LICENSE file for licensing details.
 
 
+import asyncio
 import logging
 import os
+import time
 from os.path import abspath
 from pathlib import Path
 from typing import List
 
-import hvac  # type: ignore[import-untyped]
+import hvac
 import pytest
 import yaml
 from juju.application import Application
@@ -23,7 +25,8 @@ APP_NAME = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
-NUM_VAULT_UNITS = 5
+VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
+NUM_VAULT_UNITS = 3
 
 # Vault status codes, see
 # https://developer.hashicorp.com/vault/api-docs/system/health for more details
@@ -78,9 +81,35 @@ async def get_leader(app: Application) -> Unit | None:
             return unit
     return None
 
+async def run_get_certificate_action(ops_test: OpsTest) -> dict:
+    """Run `get-certificate` on the `tls-requirer-requirer/0` unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    tls_requirer_unit = ops_test.model.units[f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}/0"]
+    assert isinstance(tls_requirer_unit, Unit)
+    action = await tls_requirer_unit.run_action(
+        action_name="get-certificate",
+    )
+    action_output = await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=30)
+    return action_output
+
+async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
+    start_time = time.time()
+    timeout = 300
+    while time.time() - start_time < timeout:
+        action_output = await run_get_certificate_action(ops_test)
+        if action_output.get("certificate", None) is not None:
+            return
+        time.sleep(10)
+    raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 @pytest.fixture(scope="module")
-@pytest.mark.abort_on_fail
 async def build_and_deploy(ops_test: OpsTest):
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
@@ -93,43 +122,86 @@ async def build_and_deploy(ops_test: OpsTest):
         config={"common_name": "example.com"},
     )
 
-
-@pytest.mark.abort_on_fail
 @pytest.fixture(scope="module")
-async def deploy_grafana_agent(ops_test: OpsTest) -> None:
-    """Deploys grafana-agent-operator.
-
-    Args:
-        ops_test: Ops test Framework.
-    """
+async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: None):
     assert ops_test.model
-    await ops_test.model.deploy(
-        GRAFANA_AGENT_APPLICATION_NAME,
-        application_name=GRAFANA_AGENT_APPLICATION_NAME,
-        trust=True,
-    )
-
-
-@pytest.mark.abort_on_fail
-@pytest.fixture(scope="module")
-async def deploy_self_signed_certificates_operator(ops_test: OpsTest):
-    """Deploy Self Signed Certificates Operator.
-
-    Args:
-        ops_test: Ops test Framework.
-    """
-    assert ops_test.model
-    await ops_test.model.deploy(
+    deploy_self_signed_certificates = ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
-        trust=True,
+        num_units=1,
         channel="stable",
     )
+    deploy_vault_pki_requirer = ops_test.model.deploy(
+        VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        channel="stable",
+        num_units=1,
+        config={"common_name": "test.example.com"},
+    )
+    deploy_grafana_agent = ops_test.model.deploy(
+        GRAFANA_AGENT_APPLICATION_NAME,
+        application_name=GRAFANA_AGENT_APPLICATION_NAME,
+        num_units=1,
+        channel="stable",
+    )
+    deployed_apps = [
+        SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
+        VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        GRAFANA_AGENT_APPLICATION_NAME,
+    ]
+    await asyncio.gather(
+        deploy_self_signed_certificates,
+        deploy_vault_pki_requirer,
+        deploy_grafana_agent
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[
+            SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
+            VAULT_PKI_REQUIRER_APPLICATION_NAME
+            ],
+        status="active",
+        timeout=1000,
+        wait_for_exact_units=1,
+    )
+    yield
+    remove_coroutines = [
+        ops_test.model.remove_application(app_name=app_name) for app_name in deployed_apps
+    ]
+    await asyncio.gather(*remove_coroutines)
+
+
+
+async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str) -> None:
+    """Unseal all the vault units."""
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    clients = []
+    for unit in app.units:
+        assert isinstance(unit, Unit)
+        unit_endpoint = f"https://{unit.public_address}:8200"
+        client = hvac.Client(url=unit_endpoint, verify=abspath(ca_file_name))
+        if client.sys.read_health_status() not in (
+            VAULT_STATUS_ACTIVE,
+            VAULT_STATUS_UNSEALED_AND_STANDBY,
+        ):
+            client.sys.submit_unseal_keys(keys)
+        clients.append(client)
+
+    async with ops_test.fast_forward():
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="blocked",
+            timeout=1000,
+        )
+    for client in clients:
+        response = client.sys.read_health_status()
+        assert response.status_code in (VAULT_STATUS_ACTIVE, VAULT_STATUS_UNSEALED_AND_STANDBY)
 
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
-    ops_test: OpsTest, build_and_deploy
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model
     async with ops_test.fast_forward():
@@ -144,7 +216,7 @@ async def test_given_charm_build_when_deploy_then_status_blocked(
 
 @pytest.mark.abort_on_fail
 async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(
-    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     """To test that Vault is actually running when the charm is active."""
     assert ops_test.model
@@ -184,7 +256,7 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_authorized_then_status_is_active(
-    ops_test: OpsTest,
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     """Test that Vault is active and running correctly after Vault is initialized, unsealed and authorized."""
     assert ops_test.model
@@ -220,38 +292,9 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
         )
     os.remove("ca_file.txt")
 
-
-async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str):
-    """Unseal all the vault units."""
-    assert ops_test.model
-    app = ops_test.model.applications[APP_NAME]
-    assert isinstance(app, Application)
-    clients = []
-    for unit in app.units:
-        assert isinstance(unit, Unit)
-        unit_endpoint = f"https://{unit.public_address}:8200"
-        client = hvac.Client(url=unit_endpoint, verify=abspath(ca_file_name))
-        if client.sys.read_health_status() not in (
-            VAULT_STATUS_ACTIVE,
-            VAULT_STATUS_UNSEALED_AND_STANDBY,
-        ):
-            client.sys.submit_unseal_keys(keys)
-        clients.append(client)
-
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="blocked",
-            timeout=1000,
-        )
-    for client in clients:
-        response = client.sys.read_health_status()
-        assert response.status_code in (VAULT_STATUS_ACTIVE, VAULT_STATUS_UNSEALED_AND_STANDBY)
-
-
 @pytest.mark.abort_on_fail
 async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_status_is_active(
-    ops_test: OpsTest, build_and_deploy, deploy_grafana_agent
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model
     await ops_test.model.integrate(
@@ -267,7 +310,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
 
 @pytest.mark.abort_on_fail
 async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
-    ops_test: OpsTest, build_and_deploy, deploy_self_signed_certificates_operator
+    ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model
     await ops_test.model.integrate(
@@ -279,3 +322,23 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
         status="active",
         timeout=1000,
     )
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
+    ops_test: OpsTest, deploy_requiring_charms: None
+):
+    assert ops_test.model
+    await ops_test.model.integrate(
+        relation1=f"{APP_NAME}:vault-pki",
+        relation2=f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}:certificates"
+        )
+    await ops_test.model.wait_for_idle(
+            apps=[APP_NAME, VAULT_PKI_REQUIRER_APPLICATION_NAME],
+            status="active",
+            timeout=1000,
+        )
+    await wait_for_certificate_to_be_provided(ops_test)
+    action_output = await run_get_certificate_action(ops_test)
+    assert action_output.get("certificate", None) is not None
+    assert action_output.get("ca-certificate", None) is not None
+    assert action_output.get("csr", None) is not None

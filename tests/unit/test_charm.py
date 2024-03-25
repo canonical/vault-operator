@@ -20,9 +20,16 @@ from charm import (
 from charms.operator_libs_linux.v2.snap import Snap, SnapState
 from charms.tls_certificates_interface.v3.tls_certificates import (
     CertificateAvailableEvent,
+    CertificateCreationRequestEvent,
     ProviderCertificate,
 )
-from charms.vault_k8s.v0.vault_client import AuditDeviceType, SecretsBackend, Token, Vault
+from charms.vault_k8s.v0.vault_client import (
+    AuditDeviceType,
+    Certificate,
+    SecretsBackend,
+    Token,
+    Vault,
+)
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
 
 PEER_RELATION_NAME = "vault-peers"
@@ -533,4 +540,71 @@ class TestCharm(unittest.TestCase):
         )
         self.mock_vault.create_pki_charm_role.assert_called_with(
             allowed_domains="vault", mount="charm-pki", role="charm-pki"
+        )
+
+    @patch("ops.model.Model.get_binding")
+    @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesProvidesV3.set_relation_certificate")
+    @patch("charm.get_common_name_from_csr")
+    def test_given_vault_available_when_vault_pki_certificate_creation_request_then_certificate_is_provided(
+        self,
+        patch_get_common_name_from_csr,
+        patch_set_relation_certificate,
+        patch_get_binding,
+    ):
+        self._set_peer_relation()
+
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        csr = "some csr content"
+        certificate = "some certificate"
+        ca = "some ca"
+        chain = [ca]
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_initialized.return_value": True,
+                "is_api_available.return_value": True,
+                "is_pki_role_created.return_value": True,
+                "is_sealed.return_value": False,
+                "sign_pki_certificate_signing_request.return_value": Certificate(
+                    certificate=certificate,
+                    ca=ca,
+                    chain=chain,
+                ),
+            },
+        )
+        relation_id = self.harness.add_relation(
+            relation_name=TLS_CERTIFICATES_PKI_RELATION_NAME, remote_app="tls-provider"
+        )
+        common_name = "vault"
+        relation_id = 99
+        patch_get_common_name_from_csr.return_value = common_name
+        self.harness.update_config({"common_name": common_name})
+        self.harness.set_leader(is_leader=True)
+
+        event = CertificateCreationRequestEvent(
+            handle=Mock(),
+            certificate_signing_request=csr,
+            relation_id=relation_id,
+            is_ca=False,
+        )
+
+        self.harness.charm._on_vault_pki_certificate_creation_request(event=event)
+
+        self.mock_vault.sign_pki_certificate_signing_request.assert_called_with(
+            mount="charm-pki",
+            csr=csr,
+            role="charm-pki",
+            common_name=common_name,
+        )
+
+        patch_set_relation_certificate.assert_called_with(
+            relation_id=relation_id,
+            certificate_signing_request=csr,
+            certificate=certificate,
+            ca=ca,
+            chain=chain,
         )
