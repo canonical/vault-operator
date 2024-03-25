@@ -26,6 +26,7 @@ from charms.vault_k8s.v0.vault_client import (
     Vault,
     VaultClientError,
 )
+from charms.vault_k8s.v0.vault_kv import NewVaultKvClientAttachedEvent, VaultKvProvides
 from charms.vault_k8s.v0.vault_tls import (
     File,
     VaultTLSManager,
@@ -36,7 +37,7 @@ from machine import Machine
 from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, ModelError, WaitingStatus
+from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,9 @@ CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
 MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 PEER_RELATION_NAME = "vault-peers"
 PKI_RELATION_NAME = "vault-pki"
+KV_RELATION_NAME = "vault-kv"
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
+KV_SECRET_PREFIX = "kv-creds-"
 VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
 VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
 VAULT_CHARM_POLICY_NAME = "charm-access"
@@ -156,6 +159,7 @@ class VaultOperatorCharm(CharmBase):
             service_name=VAULT_SNAP_NAME,
             tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
         )
+        self.vault_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.vault_pki = TLSCertificatesProvidesV3(self, PKI_RELATION_NAME)
         self.tls_certificates_pki = TLSCertificatesRequiresV3(
             self, TLS_CERTIFICATES_PKI_RELATION_NAME
@@ -167,6 +171,9 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
         self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
+        self.framework.observe(
+            self.vault_kv.on.new_vault_kv_client_attached, self._on_new_vault_kv_client_attached
+        )
         self.framework.observe(
             self.on.tls_certificates_pki_relation_joined,
             self._on_tls_certificates_pki_relation_joined,
@@ -333,6 +340,7 @@ class VaultOperatorCharm(CharmBase):
         self._set_peer_relation_node_api_address()
         self._configure_pki_secrets_engine()
         self._add_intermediate_ca_certificate_to_pki_secrets_engine()
+        self._sync_vault_kv()
         self._sync_vault_pki()
         self.tls.send_ca_cert()
 
@@ -353,6 +361,24 @@ class VaultOperatorCharm(CharmBase):
         if vault.is_active() and not vault.is_raft_cluster_healthy():
             logger.warning("Raft cluster is not healthy: %s", vault.get_raft_cluster_state())
 
+    def _on_new_vault_kv_client_attached(self, event: NewVaultKvClientAttachedEvent):
+        """Handle vault-kv-client attached event."""
+        if not self.unit.is_leader():
+            logger.debug("Only leader unit can handle a vault-kv request")
+            return
+        relation = self.model.get_relation(relation_name=KV_RELATION_NAME, relation_id=event.relation_id)
+        if not relation:
+            logger.error("Relation not found for relation id %s", event.relation_id)
+            return
+        self._generate_kv_for_requirer(
+            relation=relation,
+            app_name=event.app_name,
+            unit_name=event.unit_name,
+            mount_suffix=event.mount_suffix,
+            egress_subnet=event.egress_subnet,
+            nonce=event.nonce,
+        )
+
     def _on_tls_certificates_pki_relation_joined(self, _: RelationJoinedEvent) -> None:
         """Handle the tls-certificates-pki relation joined event."""
         self._configure_pki_secrets_engine()
@@ -368,6 +394,112 @@ class VaultOperatorCharm(CharmBase):
         self._generate_pki_certificate_for_requirer(
             event.certificate_signing_request, event.relation_id
         )
+
+    def _generate_kv_for_requirer(
+            self,
+            relation: Relation,
+            app_name: str,
+            unit_name: str,
+            mount_suffix: str,
+            egress_subnet: str,
+            nonce: str,
+        ):
+        if not self.unit.is_leader():
+            logger.debug("Only leader unit can handle a vault-kv request")
+            return
+        ca_certificate = self.tls.pull_tls_file_from_workload(File.CA)
+        if not ca_certificate:
+            logger.debug("Vault CA certificate not available")
+            return
+        vault = self._get_vault_client()
+        if (
+            not vault
+            or not vault.is_api_available()
+            or not vault.is_initialized()
+            or vault.is_sealed()
+        ):
+            return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            return
+        vault_url = self._get_relation_api_address(relation)
+        if not vault_url:
+            logger.debug("Vault URL not available")
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        mount = "charm-" + app_name + "-" + mount_suffix
+        policy_name = role_name = mount + "-" + unit_name.replace("/", "-")
+        vault.enable_secrets_engine(SecretsBackend.KV_V2, mount)
+        vault.configure_policy(policy_name=policy_name, policy_path="src/templates/kv_mount.hcl", mount=mount)
+        role_id = vault.configure_approle(
+            role_name=role_name,
+            policies=[policy_name],
+            cidrs=[egress_subnet],
+            )
+        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        secret = self._create_or_update_kv_secret(
+            role_name=role_name,
+            role_id=role_id,
+            role_secret_id=role_secret_id,
+        )
+        secret.grant(relation)
+        self.vault_kv.set_mount(relation, mount)
+        self.vault_kv.set_ca_certificate(relation, ca_certificate)
+        self.vault_kv.set_vault_url(relation, vault_url)
+        self.vault_kv.set_unit_credentials(relation, nonce, secret)
+        credential_nonces = self.vault_kv.get_credentials(relation).keys()
+        if nonce not in set(credential_nonces):
+            self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
+
+    def _create_or_update_kv_secret(self, role_name: str, role_id: str, role_secret_id: str) -> Secret:
+        """Create or update the KV secret for the relation.
+
+        Args:
+            role_name: The role name to set the secret for
+            role_id: The role ID to set in the secret
+            role_secret_id: The role secret ID to set in the secret
+        """
+        juju_secret_label = KV_SECRET_PREFIX + role_name
+        try:
+            secret = self.model.get_secret(label=juju_secret_label)
+        except SecretNotFoundError:
+            return self.app.add_secret(
+                content={"role-id": role_id, "role-secret-id": role_secret_id},
+                label=juju_secret_label,
+            )
+        credentials = secret.get_content()
+        credentials["role-secret-id"] = role_secret_id
+        secret.set_content(credentials)
+        return secret
+
+    def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
+        """Fetch the api address from relation and returns it.
+
+        Example: "https://10.152.183.20:8200"
+        """
+        binding = self.model.get_binding(relation)
+        if binding is None:
+            return None
+        return f"https://{binding.network.ingress_address}:{VAULT_PORT}"
+
+    def _sync_vault_kv(self) -> None:
+        """Goes through all the vault-kv relations and sends necessary KV information."""
+        if not self.unit.is_leader():
+            logger.debug("Only leader unit can handle a vault-kv request")
+            return
+        outstanding_kv_requests = self.vault_kv.get_outstanding_kv_requests()
+        for kv_request in outstanding_kv_requests:
+            relation = self.model.get_relation(relation_name = KV_RELATION_NAME, relation_id=kv_request.relation_id)
+            if not relation:
+                logger.warning("Relation not found for relation id %s", kv_request.relation_id)
+                continue
+            self._generate_kv_for_requirer(
+                relation=relation,
+                app_name=kv_request.app_name,
+                unit_name=kv_request.unit_name,
+                mount_suffix=kv_request.mount_suffix,
+                egress_subnet=kv_request.egress_subnet,
+                nonce=kv_request.nonce,
+            )
 
     def _generate_pki_certificate_for_requirer(self, csr: str, relation_id: int):
         """Generate a PKI certificate for a TLS requirer."""

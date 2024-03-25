@@ -5,6 +5,7 @@ jsonschema
 ops
 psutil
 pyhcl
+pytest-interface-tester
 # cos-agent requires pydantic<2
 pydantic<2
 # vault_client requirements
