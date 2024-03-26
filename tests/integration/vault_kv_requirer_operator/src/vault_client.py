@@ -1,9 +1,9 @@
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import logging
 
-import hvac  # type: ignore[import-untyped]
+import hvac
 
 logger = logging.getLogger(__name__)
 

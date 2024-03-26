@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import logging
@@ -15,7 +15,7 @@ from charms.vault_k8s.v0.vault_kv import (
 from ops.charm import ActionEvent, CharmBase, InstallEvent
 from ops.main import main
 from ops.model import ActiveStatus, SecretNotFoundError
-from vault_client import Vault  # type: ignore[import-not-found]
+from vault_client import Vault
 
 NONCE_SECRET_LABEL = "vault-kv-nonce"
 VAULT_KV_SECRET_LABEL = "vault-kv"
