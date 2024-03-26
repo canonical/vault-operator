@@ -338,6 +338,36 @@ async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_t
     )
 
 @pytest.mark.abort_on_fail
+async def test_given_vault_kv_requirer_related_when_create_secret_then_secret_is_created(
+    ops_test, deploy_requiring_charms: None
+):
+    secret_key = "test-key"
+    secret_value = "test-value"
+    vault_kv_application = ops_test.model.applications[VAULT_KV_REQUIRER_APPLICATION_NAME]
+    vault_kv_unit = vault_kv_application.units[0]
+    vault_kv_create_secret_action = await vault_kv_unit.run_action(
+        action_name="create-secret",
+        key=secret_key,
+        value=secret_value,
+    )
+
+    await ops_test.model.get_action_output(
+        action_uuid=vault_kv_create_secret_action.entity_id, wait=30
+    )
+
+    vault_kv_get_secret_action = await vault_kv_unit.run_action(
+        action_name="get-secret",
+        key=secret_key,
+    )
+
+    action_output = await ops_test.model.get_action_output(
+        action_uuid=vault_kv_get_secret_action.entity_id, wait=30
+    )
+
+    assert action_output["value"] == secret_value
+
+
+@pytest.mark.abort_on_fail
 async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
     ops_test: OpsTest, deploy_requiring_charms: None
 ):
