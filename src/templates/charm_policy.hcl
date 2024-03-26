@@ -37,3 +37,8 @@ path "sys/mounts/" {
 path "sys/storage/raft/autopilot/state" {
   capabilities = ["read"]
 }
+
+# Allow operations under the charm prefix
+path "charm-*" {
+  capabilities = [ "create", "read", "update", "delete", "list", "sudo" ]
+}

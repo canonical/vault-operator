@@ -36,6 +36,8 @@ peers:
     interface: vault-peer
 
 provides:
+  vault-pki:
+    interface: tls-certificates
   cos-agent:
     interface: cos_agent
   send-ca-cert:
@@ -50,3 +52,9 @@ requires:
     description: |
       Communication between the vault units and from a client to Vault should 
       be done using the certificates provided by this integration.
+  tls-certificates-pki:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Interface to be used to provide Vault with its CA certificate. Vault will
+      use this certificate to sign the certificates it issues on the `vault-pki` interface.
