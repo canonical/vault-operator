@@ -426,8 +426,9 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("Vault URL not available")
             return
         vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
-        mount = "charm-" + app_name + "-" + mount_suffix
-        policy_name = role_name = mount + "-" + unit_name.replace("/", "-")
+        mount = f"charm-{app_name}-{mount_suffix}"
+        unit_name_dash = unit_name.replace("/", "-")
+        policy_name = role_name = f"{mount}-{unit_name_dash}"
         vault.enable_secrets_engine(SecretsBackend.KV_V2, mount)
         vault.configure_policy(policy_name=policy_name, policy_path="src/templates/kv_mount.hcl", mount=mount)
         role_id = vault.configure_approle(
@@ -458,7 +459,7 @@ class VaultOperatorCharm(CharmBase):
             role_id: The role ID to set in the secret
             role_secret_id: The role secret ID to set in the secret
         """
-        juju_secret_label = KV_SECRET_PREFIX + role_name
+        juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
         try:
             secret = self.model.get_secret(label=juju_secret_label)
         except SecretNotFoundError:
