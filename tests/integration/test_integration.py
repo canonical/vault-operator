@@ -2,9 +2,9 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-
 import asyncio
 import logging
+import shutil
 import time
 from os.path import abspath
 from pathlib import Path
@@ -24,8 +24,12 @@ APP_NAME = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
+VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 NUM_VAULT_UNITS = 3
+
+VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
+VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
 
 # Vault status codes, see
 # https://developer.hashicorp.com/vault/api-docs/system/health for more details
@@ -109,26 +113,35 @@ async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
     raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 @pytest.fixture(scope="module")
-async def build_and_deploy(ops_test: OpsTest):
+async def build_and_deploy(ops_test: OpsTest) -> dict[str, Path | str]:
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
-    charm = await ops_test.build_charm(".")
+    copy_lib_content()
+    built_charms = await ops_test.build_charms(".", f"{VAULT_KV_REQUIRER_CHARM_DIR}/")
+    vault_charm = built_charms.get(APP_NAME, "")
+    vault_kv_requirer_charm = built_charms.get("vault-kv-requirer", "")
     await ops_test.model.deploy(
-        charm,
+        vault_charm,
         application_name=APP_NAME,
         trust=True,
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
     )
+    return {"vault-kv-requirer": vault_kv_requirer_charm}
 
 @pytest.fixture(scope="module")
-async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: None):
+async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str, Path | str]):
     assert ops_test.model
     deploy_self_signed_certificates = ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         num_units=1,
         channel="stable",
+    )
+    deploy_vault_kv_requirer = ops_test.model.deploy(
+        build_and_deploy.get("vault-kv-requirer", ""),
+        application_name=VAULT_KV_REQUIRER_APPLICATION_NAME,
+        num_units=1,
     )
     deploy_vault_pki_requirer = ops_test.model.deploy(
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
@@ -145,11 +158,13 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: None):
     )
     deployed_apps = [
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
+        VAULT_KV_REQUIRER_APPLICATION_NAME,
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
         GRAFANA_AGENT_APPLICATION_NAME,
     ]
     await asyncio.gather(
         deploy_self_signed_certificates,
+        deploy_vault_kv_requirer,
         deploy_vault_pki_requirer,
         deploy_grafana_agent
     )
@@ -307,6 +322,50 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
             timeout=1000,
         )
 
+@pytest.mark.abort_on_fail
+async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_then_status_is_active(
+    ops_test: OpsTest, deploy_requiring_charms: None
+):
+    assert ops_test.model
+    await ops_test.model.integrate(
+        relation1=f"{APP_NAME}:vault-kv",
+        relation2=f"{VAULT_KV_REQUIRER_APPLICATION_NAME}:vault-kv",
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME, VAULT_KV_REQUIRER_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_kv_requirer_related_when_create_secret_then_secret_is_created(
+    ops_test, deploy_requiring_charms: None
+):
+    secret_key = "test-key"
+    secret_value = "test-value"
+    vault_kv_application = ops_test.model.applications[VAULT_KV_REQUIRER_APPLICATION_NAME]
+    vault_kv_unit = vault_kv_application.units[0]
+    vault_kv_create_secret_action = await vault_kv_unit.run_action(
+        action_name="create-secret",
+        key=secret_key,
+        value=secret_value,
+    )
+
+    await ops_test.model.get_action_output(
+        action_uuid=vault_kv_create_secret_action.entity_id, wait=30
+    )
+
+    vault_kv_get_secret_action = await vault_kv_unit.run_action(
+        action_name="get-secret",
+        key=secret_key,
+    )
+
+    action_output = await ops_test.model.get_action_output(
+        action_uuid=vault_kv_get_secret_action.entity_id, wait=30
+    )
+
+    assert action_output["value"] == secret_value
+
 
 @pytest.mark.abort_on_fail
 async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is_active(
@@ -342,3 +401,6 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
     assert action_output.get("certificate", None) is not None
     assert action_output.get("ca-certificate", None) is not None
     assert action_output.get("csr", None) is not None
+
+def copy_lib_content() -> None:
+    shutil.copyfile(src=VAULT_KV_LIB_DIR, dst=f"{VAULT_KV_REQUIRER_CHARM_DIR}/{VAULT_KV_LIB_DIR}")

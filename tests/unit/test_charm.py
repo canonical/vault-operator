@@ -33,18 +33,22 @@ from charms.vault_k8s.v0.vault_client import (
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
 
 PEER_RELATION_NAME = "vault-peers"
+VAULT_KV_RELATION_NAME = "vault-kv"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 TLS_CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
+VAULT_KV_LIB_PATH = "charms.vault_k8s.v0.vault_kv"
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
+VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
 
 class MockNetwork:
-    def __init__(self, bind_address: str):
+    def __init__(self, bind_address: str, ingress_address: str):
         self.bind_address = bind_address
+        self.ingress_address = ingress_address
 
 
 class MockBinding:
-    def __init__(self, bind_address: str):
-        self.network = MockNetwork(bind_address=bind_address)
+    def __init__(self, bind_address: str, ingress_address: str):
+        self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
 
 
 def read_file(path: str) -> str:
@@ -167,6 +171,24 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
+    def setup_vault_kv_relation(self) -> tuple:
+        app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
+        unit_name = app_name + "/0"
+        relation_name = VAULT_KV_RELATION_NAME
+
+        host_ip = "10.20.20.1"
+        self.harness.add_network(host_ip, endpoint="vault-kv")
+        self.harness.set_leader()
+        rel_id = self.harness.add_relation(relation_name, app_name)
+        unit_name = app_name + "/0"
+        egress_subnet = "10.20.20.20/32"
+        self.harness.add_relation_unit(rel_id, unit_name)
+        self.harness.update_relation_data(
+            rel_id, unit_name, {"egress_subnet": egress_subnet, "nonce": "0"}
+        )
+
+        return (rel_id, egress_subnet)
+
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
     def test_given_vault_snap_uninstalled_when_configure_then_vault_snap_installed(
@@ -177,7 +199,7 @@ class TestCharm(unittest.TestCase):
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
 
         self.harness.charm.on.install.emit()
 
@@ -195,7 +217,7 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader(is_leader=True)
         self.harness.add_storage(storage_name="certs", attach=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self._set_peer_relation()
         self._set_ca_certificate_secret(
             certificate="whatever certificate",
@@ -229,7 +251,7 @@ class TestCharm(unittest.TestCase):
     def test_given_unit_not_leader_and_peer_addresses_unavailable_when_collectstatus_then_status_is_waiting(
         self, patch_get_binding
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self.mock_vault_tls_manager.tls_file_available_in_charm.return_value = False
         self.harness.set_leader(is_leader=False)
         self._set_peer_relation()
@@ -247,7 +269,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding,
     ):
         self.mock_machine.exists.return_value = False
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
@@ -272,7 +294,7 @@ class TestCharm(unittest.TestCase):
         self,
         patch_get_binding,
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -305,7 +327,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding,
     ):
         bind_address = "1.2.1.2"
-        patch_get_binding.return_value = MockBinding(bind_address=bind_address)
+        patch_get_binding.return_value = MockBinding(bind_address=bind_address, ingress_address="2.3.2.3")
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -333,7 +355,7 @@ class TestCharm(unittest.TestCase):
         self,
         patch_get_binding,
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -365,7 +387,7 @@ class TestCharm(unittest.TestCase):
     ):
         self.mock_vault.configure_mock(**{"is_sealed.return_value": False})
 
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self.harness.set_leader(is_leader=False)
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
@@ -395,7 +417,7 @@ class TestCharm(unittest.TestCase):
         mock_get_binding: MagicMock,
     ):
         self.mock_machine.exists.return_value = False
-        mock_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        mock_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
@@ -446,7 +468,7 @@ class TestCharm(unittest.TestCase):
         patch_request_certificate_creation,
     ):
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         csr = "some csr content"
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
@@ -486,7 +508,7 @@ class TestCharm(unittest.TestCase):
         patch_get_binding,
     ):
         peer_relation_id = self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
@@ -553,7 +575,7 @@ class TestCharm(unittest.TestCase):
     ):
         self._set_peer_relation()
 
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2")
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
@@ -607,4 +629,57 @@ class TestCharm(unittest.TestCase):
             certificate=certificate,
             ca=ca,
             chain=chain,
+        )
+
+    @patch("ops.model.Model.get_binding")
+    def test_given_prerequisites_are_met_when_new_vault_kv_client_attached_then_kv_mount_is_configured(
+        self,
+        patch_get_binding,
+    ):
+        self.mock_vault_tls_manager.pull_tls_file_from_workload.return_value = "whatever ca cert"
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "configure_approle.return_value": "12345678",
+                "generate_role_secret_id.return_value": "11111111",
+                "is_initialized.return_value": True,
+                "is_api_available.return_value": True,
+                "is_sealed.return_value": False,
+            },
+        )
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        self.harness.set_leader(is_leader=True)
+        rel_id, _ = self.setup_vault_kv_relation()
+        event = Mock()
+        event.relation_name = VAULT_KV_RELATION_NAME
+        event.relation_id = rel_id
+        event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
+        event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
+        event.mount_suffix = "suffix"
+        event.egress_subnet = "2.2.2.0/24"
+        event.nonce = "123123"
+
+        self.harness.charm._on_new_vault_kv_client_attached(event)
+
+        self.mock_vault.enable_secrets_engine.assert_called_with(
+            SecretsBackend.KV_V2, "charm-vault-kv-requirer-suffix"
+        )
+        self.mock_vault.configure_policy.assert_called_with(
+            policy_name='charm-vault-kv-requirer-suffix-vault-kv-requirer-0',
+            policy_path='src/templates/kv_mount.hcl',
+            mount='charm-vault-kv-requirer-suffix',
+        )
+        self.mock_vault.configure_approle.assert_called_with(
+            role_name='charm-vault-kv-requirer-suffix-vault-kv-requirer-0',
+            policies=['charm-vault-kv-requirer-suffix-vault-kv-requirer-0'],
+            cidrs=['2.2.2.0/24'],
+        )
+        self.mock_vault.generate_role_secret_id.assert_called_with(
+            name='charm-vault-kv-requirer-suffix-vault-kv-requirer-0',
+            cidrs=['2.2.2.0/24'],
         )
