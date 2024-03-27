@@ -260,7 +260,7 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
     vault_endpoint = f"https://{unit_ip}:8200"
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
-    ca_file_location = ops_test.tmp_path / "ca_file.txt"
+    ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
     with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
     client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
@@ -284,7 +284,7 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
 
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
-    ca_file_location = ops_test.tmp_path / "ca_file.txt"
+    ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
     with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
     client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
