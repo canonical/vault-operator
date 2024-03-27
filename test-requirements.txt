@@ -107,12 +107,12 @@ ptyprocess==0.7.0
     # via pexpect
 pure-eval==0.2.2
     # via stack-data
-pyasn1==0.5.1
+pyasn1==0.6.0
     # via
     #   juju
     #   pyasn1-modules
     #   rsa
-pyasn1-modules==0.3.0
+pyasn1-modules==0.4.0
     # via google-auth
 pycparser==2.21
     # via
@@ -131,7 +131,7 @@ pyrfc3339==1.1
     # via
     #   juju
     #   macaroonbakery
-pyright==1.1.355
+pyright==1.1.356
     # via -r test-requirements.in
 pytest==8.1.1
     # via
