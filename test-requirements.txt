@@ -101,7 +101,7 @@ pluggy==1.4.0
     #   pytest
 prompt-toolkit==3.0.43
     # via ipython
-protobuf==5.26.0
+protobuf==5.26.1
     # via macaroonbakery
 ptyprocess==0.7.0
     # via pexpect
@@ -144,7 +144,9 @@ pytest-asyncio==0.21.1
 pytest-operator==0.34.0
     # via -r test-requirements.in
 python-dateutil==2.9.0.post0
-    # via kubernetes
+    # via
+    #   -c requirements.txt
+    #   kubernetes
 pytz==2024.1
     # via pyrfc3339
 pyyaml==6.0.1
@@ -168,6 +170,7 @@ ruff==0.3.4
     # via -r test-requirements.in
 six==1.16.0
     # via
+    #   -c requirements.txt
     #   asttokens
     #   kubernetes
     #   macaroonbakery

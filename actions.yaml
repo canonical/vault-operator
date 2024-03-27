@@ -11,3 +11,9 @@ authorize-charm:
         that is provided upon initializing Vault. Used to create the app role
         and policy for the charm. It is not stored by the charm.
   required: [token]
+
+
+create-backup:
+  description: >-
+    Creates a snapshot of the Raft backend and saves it to the S3 storage.
+    Returns backup ID.

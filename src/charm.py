@@ -4,12 +4,13 @@
 
 
 """A machine charm for Vault."""
-
+import datetime
 import logging
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
 import hcl
+from charms.data_platform_libs.v0.s3 import S3Requirer
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
 from charms.tls_certificates_interface.v3.tls_certificates import (
@@ -38,6 +39,7 @@ from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundE
 from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
+from s3_session import S3, S3Error
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
 PEER_RELATION_NAME = "vault-peers"
 PKI_RELATION_NAME = "vault-pki"
 KV_RELATION_NAME = "vault-kv"
+S3_RELATION_NAME = "s3-parameters"
+REQUIRED_S3_PARAMETERS = ["bucket", "access-key", "secret-key", "endpoint"]
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
 KV_SECRET_PREFIX = "kv-creds-"
 VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
@@ -64,6 +68,7 @@ VAULT_SNAP_REVISION = "2181"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 VAULT_PKI_MOUNT = "charm-pki"
 VAULT_PKI_ROLE = "charm-pki"
+BACKUP_KEY_PREFIX = "vault-backup"
 
 
 def render_vault_config_file(
@@ -164,6 +169,7 @@ class VaultOperatorCharm(CharmBase):
         self.tls_certificates_pki = TLSCertificatesRequiresV3(
             self, TLS_CERTIFICATES_PKI_RELATION_NAME
         )
+        self.s3_requirer = S3Requirer(self, S3_RELATION_NAME)
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.update_status, self._configure)
@@ -186,6 +192,7 @@ class VaultOperatorCharm(CharmBase):
             self.vault_pki.on.certificate_creation_request,
             self._on_vault_pki_certificate_creation_request,
         )
+        self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
 
     @contextmanager
     def temp_maintenance_status(self, message: str):
@@ -394,6 +401,102 @@ class VaultOperatorCharm(CharmBase):
         self._generate_pki_certificate_for_requirer(
             event.certificate_signing_request, event.relation_id
         )
+
+    def _on_create_backup_action(self, event: ActionEvent) -> None:
+        """Handle the create-backup action.
+
+        Creates a snapshot and stores it on S3 storage.
+        Outputs the ID of the backup to the user.
+
+        Args:
+            event: ActionEvent
+        """
+        if not self.unit.is_leader():
+            logger.error("Only leader unit can perform backup operations.")
+            event.fail(message="Only leader unit can perform backup operations.")
+            return
+
+        if not self._is_relation_created(S3_RELATION_NAME):
+            event.fail(message="Failed to perform backup. S3 relation not created.")
+            return
+
+        if missing_parameters:= self._get_missing_s3_parameters():
+            event.fail(message=f"Failed to perform backup. S3 parameters missing: {missing_parameters}")
+            return
+
+        s3_parameters = self._get_s3_parameters()
+
+        try:
+            s3 = S3(
+                access_key=s3_parameters["access-key"],
+                secret_key=s3_parameters["secret-key"],
+                endpoint=s3_parameters["endpoint"],
+                region=s3_parameters.get("region"),
+            )
+        except S3Error as e:
+            logger.error("Failed to create S3 session: %s", e)
+            event.fail(message="Failed to create S3 session.")
+            return
+
+        if not (s3.create_bucket(bucket_name=s3_parameters["bucket"])):
+            logger.error("Failed to create S3 bucket")
+            event.fail(message="Failed to create S3 bucket.")
+            return
+        backup_key = self._get_backup_key()
+        vault = self._get_vault_client()
+        if (
+            not vault
+            or not vault.is_api_available()
+            or not vault.is_initialized()
+            or vault.is_sealed()
+        ):
+            event.fail(message="Failed to initialize Vault client.")
+            return
+        response = vault.create_snapshot()
+        content_uploaded = s3.upload_content(
+            content=response.raw,
+            bucket_name=s3_parameters["bucket"],
+            key=backup_key,
+        )
+        if not content_uploaded:
+            logger.error("Failed to upload backup to S3 bucket")
+            event.fail(message="Failed to upload backup to S3 bucket.")
+            return
+        logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
+        event.set_results({"backup-id": backup_key})
+
+    def _get_backup_key(self) -> str:
+        """Return the backup key.
+
+        Returns:
+            str: The backup key
+        """
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        return f"{BACKUP_KEY_PREFIX}-{self.model.name}-{timestamp}"
+
+    def _get_s3_parameters(self) -> Dict[str, str]:
+        """Retrieve S3 parameters from the S3 integrator relation.
+
+        Removes leading and trailing whitespaces from the parameters.
+
+        Returns:
+            Dict[str, str]: Dictionary of the S3 parameters.
+        """
+        s3_parameters = self.s3_requirer.get_s3_connection_info()
+        for key, value in s3_parameters.items():
+            if isinstance(value, str):
+                s3_parameters[key] = value.strip()
+        return s3_parameters
+
+
+    def _get_missing_s3_parameters(self) -> List[str]:
+        """Return the list of missing S3 parameters.
+
+        Returns:
+            List[str]: List of missing required S3 parameters.
+        """
+        s3_parameters = self.s3_requirer.get_s3_connection_info()
+        return [param for param in REQUIRED_S3_PARAMETERS if param not in s3_parameters]
 
     def _generate_kv_for_requirer(
             self,
