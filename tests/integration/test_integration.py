@@ -130,18 +130,6 @@ async def build_and_deploy(ops_test: OpsTest) -> dict[str, Path | str]:
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
     )
-    await ops_test.model.deploy(
-            "s3-integrator",
-            application_name=S3_INTEGRATOR_APPLICATION_NAME,
-            trust=True,
-            channel="stable",
-        )
-    await ops_test.model.wait_for_idle(
-            apps=[S3_INTEGRATOR_APPLICATION_NAME],
-            status="blocked",
-            timeout=1000,
-            wait_for_exact_units=1,
-        )
     return {"vault-kv-requirer": vault_kv_requirer_charm}
 
 @pytest.fixture(scope="module")
@@ -171,17 +159,26 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         num_units=1,
         channel="stable",
     )
+    deploy_s3_integrator = ops_test.model.deploy(
+            "s3-integrator",
+            application_name=S3_INTEGRATOR_APPLICATION_NAME,
+            trust=True,
+            channel="stable",
+        )
+
     deployed_apps = [
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         VAULT_KV_REQUIRER_APPLICATION_NAME,
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
         GRAFANA_AGENT_APPLICATION_NAME,
+        S3_INTEGRATOR_APPLICATION_NAME,
     ]
     await asyncio.gather(
         deploy_self_signed_certificates,
         deploy_vault_kv_requirer,
         deploy_vault_pki_requirer,
-        deploy_grafana_agent
+        deploy_grafana_agent,
+        deploy_s3_integrator
     )
     await ops_test.model.wait_for_idle(
         apps=[
@@ -192,6 +189,12 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         timeout=1000,
         wait_for_exact_units=1,
     )
+    await ops_test.model.wait_for_idle(
+            apps=[S3_INTEGRATOR_APPLICATION_NAME],
+            status="blocked",
+            timeout=1000,
+            wait_for_exact_units=1,
+        )
     yield
     remove_coroutines = [
         ops_test.model.remove_application(app_name=app_name) for app_name in deployed_apps
