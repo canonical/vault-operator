@@ -9,13 +9,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
     
-      - name: Install charmcraft
-        run: sudo snap install charmcraft --classic
-    
       - name: Setup LXD
         uses: canonical/setup-lxd@main
         with:
             channel: latest/candidate
+    
+      - name: Install charmcraft
+        run: sudo snap install charmcraft --classic
 
       - name: Build Vault charm
         run: charmcraft pack --verbose
@@ -31,14 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-    
-      - name: Install charmcraft
-        run: sudo snap install charmcraft --classic
       
       - name: Setup LXD
         uses: canonical/setup-lxd@main
         with:
           channel: latest/candidate
+      
+      - name: Install charmcraft
+        run: sudo snap install charmcraft --classic
 
       - name: Build KV Requirer charm
         run: |
