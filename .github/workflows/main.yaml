@@ -23,14 +23,21 @@ jobs:
   unit-tests-with-coverage:
     uses: ./.github/workflows/unit-test.yaml
   
+  build:
+    needs:
+      - lint-report
+      - static-analysis
+      - unit-tests-with-coverage
+    uses: ./.github/workflows/build.yaml
+    secrets: inherit
+  
   integration-tests:
     needs:
       - lint-report
       - static-analysis
       - unit-tests-with-coverage
+      - build
     uses: ./.github/workflows/integration-tests.yaml
-    with:
-      charm-file-name: "vault_ubuntu-22.04-amd64.charm"
     secrets: inherit
 
   publish-charm:
