@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import unittest
+from typing import Mapping
 from unittest.mock import MagicMock, Mock, call, patch
 
 import hcl
@@ -31,9 +32,12 @@ from charms.vault_k8s.v0.vault_client import (
     Vault,
 )
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
+from s3_session import S3, S3Error
 
+S3_LIB_PATH = "charms.data_platform_libs.v0.s3"
 PEER_RELATION_NAME = "vault-peers"
 VAULT_KV_RELATION_NAME = "vault-kv"
+S3_RELATION_NAME = "s3-parameters"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 TLS_CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
 VAULT_KV_LIB_PATH = "charms.vault_k8s.v0.vault_kv"
@@ -120,6 +124,16 @@ class TestCharm(unittest.TestCase):
         TestCharm.patcher_snap_cache.stop()
         TestCharm.patcher_vault_tls_manager.stop()
         TestCharm.patcher_machine.stop()
+
+    def get_valid_s3_params(self) -> Mapping[str, str]:
+        """Return a valid S3 parameters for mocking."""
+        return {
+            "bucket": "BUCKET",
+            "access-key": "whatever access key",
+            "secret-key": "whatever secret key",
+            "endpoint": "http://ENDPOINT",
+            "region": "REGION",
+        }
 
     def _set_peer_relation(self) -> int:
         """Set the peer relation and return the relation id."""
@@ -683,3 +697,232 @@ class TestCharm(unittest.TestCase):
             name='charm-vault-kv-requirer-suffix-vault-kv-requirer-0',
             cidrs=['2.2.2.0/24'],
         )
+
+    def test_given_s3_relation_not_created_when_create_backup_action_then_action_fails(self):
+        event = Mock()
+        self.harness.set_leader(is_leader=True)
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to perform backup. S3 relation not created.")
+
+
+    def test_given_unit_not_leader_when_create_backup_action_then_action_fails(self):
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Only leader unit can perform backup operations.")
+
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    def test_given_missing_s3_parameters_when_create_backup_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info,
+    ):
+        patch_get_s3_connection_info.return_value = {}
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_once()
+        call_args = event.fail.call_args[1]["message"]
+        self.assertIn("S3 parameters missing", call_args)
+
+
+    @patch("charm.S3")
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    def test_given_s3_session_not_created_when_create_backup_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info,
+        patch_s3,
+    ):
+        patch_s3.side_effect = S3Error("Failed to create S3 session.")
+        patch_get_s3_connection_info.return_value = {
+            "bucket": "whatever bucket",
+            "access-key": "whatever access key",
+            "secret-key": "whatever secret key",
+            "endpoint": "whatever endpoint",
+        }
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to create S3 session.")
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_bucket_creation_returns_false_when_create_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.create_bucket.return_value": False
+            }
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to create S3 bucket.")
+
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_vault_is_not_initialized_when_create_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_api_available.return_value": True,
+                "is_initialized.return_value": False,
+            },
+        )
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.create_bucket.return_value": True
+            }
+        )
+        self._set_peer_relation()
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to initialize Vault client.")
+
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_vault_api_not_available_when_create_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_api_available.return_value": False,
+                "is_initialized.return_value": True,
+            },
+        )
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.create_bucket.return_value": True
+            }
+        )
+        self._set_peer_relation()
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to initialize Vault client.")
+
+    @patch("ops.model.Model.get_binding")
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_s3_content_upload_fails_when_create_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+        patch_get_binding,
+    ):
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_api_available.return_value": True,
+                "is_initialized.return_value": True,
+                "is_sealed.return_value": False,
+            },
+        )
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.create_bucket.return_value": True,
+                "return_value.upload_content.return_value": False
+            }
+        )
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.3.4", ingress_address="2.2.2.2")
+
+        self._set_peer_relation()
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.fail.assert_called_with(message="Failed to upload backup to S3 bucket.")
+
+    @patch("ops.model.Model.get_binding")
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_content_uploaded_to_s3_when_create_backup_action_then_action_succeeds(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+        patch_get_binding,
+    ):
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_api_available.return_value": True,
+                "is_initialized.return_value": True,
+                "is_sealed.return_value": False,
+            },
+        )
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.create_bucket.return_value": True,
+                "return_value.upload_content.return_value": True
+            }
+        )
+        patch_get_binding.return_value = MockBinding(bind_address="1.1.1.1", ingress_address="2.2.2.2")
+
+        self._set_peer_relation()
+        self._set_ca_certificate_secret(
+            certificate="whatever certificate",
+            private_key="whatever private key",
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_create_backup_action(event)
+
+        event.set_results.assert_called()

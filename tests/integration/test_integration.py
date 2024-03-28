@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-import shutil
 import time
 from os.path import abspath
 from pathlib import Path
@@ -17,6 +16,8 @@ from juju.application import Application
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
 
+from tests.integration.helpers import get_leader_unit
+
 logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
@@ -27,6 +28,7 @@ SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 NUM_VAULT_UNITS = 3
+S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
 
 VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
 VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
@@ -37,6 +39,11 @@ VAULT_STATUS_ACTIVE = 200
 VAULT_STATUS_UNSEALED_AND_STANDBY = 429
 VAULT_STATUS_NOT_INITIALIZED = 501
 VAULT_STATUS_SEALED = 503
+
+# Vault charm and kv-requirer charms are expected to be in the project's root directory
+CHARM_ROOT = Path(__file__).parent.parent.parent
+VAULT_CHARM_PATH = (CHARM_ROOT / "vault_ubuntu-22.04-amd64.charm").resolve()
+KV_REQUIRER_CHARM_PATH = (CHARM_ROOT / "vault-kv-requirer_ubuntu-22.04-amd64.charm").resolve()
 
 
 async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) -> dict:
@@ -113,25 +120,23 @@ async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
     raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 @pytest.fixture(scope="module")
-async def build_and_deploy(ops_test: OpsTest) -> dict[str, Path | str]:
+async def deploy_vault(ops_test: OpsTest) -> None:
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
-    copy_lib_content()
-    built_charms = await ops_test.build_charms(".", f"{VAULT_KV_REQUIRER_CHARM_DIR}/")
-    vault_charm = built_charms.get(APP_NAME, "")
-    vault_kv_requirer_charm = built_charms.get("vault-kv-requirer", "")
+    if not VAULT_CHARM_PATH.exists():
+        raise FileNotFoundError(f"Charm not found: {VAULT_CHARM_PATH}")
     await ops_test.model.deploy(
-        vault_charm,
+        VAULT_CHARM_PATH,
         application_name=APP_NAME,
-        trust=True,
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
     )
-    return {"vault-kv-requirer": vault_kv_requirer_charm}
 
 @pytest.fixture(scope="module")
-async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str, Path | str]):
+async def deploy_requiring_charms(ops_test: OpsTest, deploy_vault: None):
     assert ops_test.model
+    if not KV_REQUIRER_CHARM_PATH.exists():
+        raise FileNotFoundError(f"Charm not found: {KV_REQUIRER_CHARM_PATH}")
     deploy_self_signed_certificates = ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
@@ -139,7 +144,7 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         channel="stable",
     )
     deploy_vault_kv_requirer = ops_test.model.deploy(
-        build_and_deploy.get("vault-kv-requirer", ""),
+        KV_REQUIRER_CHARM_PATH,
         application_name=VAULT_KV_REQUIRER_APPLICATION_NAME,
         num_units=1,
     )
@@ -156,17 +161,26 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         num_units=1,
         channel="stable",
     )
+    deploy_s3_integrator = ops_test.model.deploy(
+            "s3-integrator",
+            application_name=S3_INTEGRATOR_APPLICATION_NAME,
+            trust=True,
+            channel="stable",
+        )
+
     deployed_apps = [
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         VAULT_KV_REQUIRER_APPLICATION_NAME,
         VAULT_PKI_REQUIRER_APPLICATION_NAME,
         GRAFANA_AGENT_APPLICATION_NAME,
+        S3_INTEGRATOR_APPLICATION_NAME,
     ]
     await asyncio.gather(
         deploy_self_signed_certificates,
         deploy_vault_kv_requirer,
         deploy_vault_pki_requirer,
-        deploy_grafana_agent
+        deploy_grafana_agent,
+        deploy_s3_integrator
     )
     await ops_test.model.wait_for_idle(
         apps=[
@@ -177,6 +191,12 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         timeout=1000,
         wait_for_exact_units=1,
     )
+    await ops_test.model.wait_for_idle(
+            apps=[S3_INTEGRATOR_APPLICATION_NAME],
+            status="blocked",
+            timeout=1000,
+            wait_for_exact_units=1,
+        )
     yield
     remove_coroutines = [
         ops_test.model.remove_application(app_name=app_name) for app_name in deployed_apps
@@ -212,6 +232,49 @@ async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str
         response = client.sys.read_health_status()
         assert response.status_code in (VAULT_STATUS_ACTIVE, VAULT_STATUS_UNSEALED_AND_STANDBY)
 
+async def run_s3_integrator_sync_credentials_action(
+    ops_test: OpsTest, access_key: str, secret_key: str
+) -> dict:
+    """Run the `sync-s3-credentials` action on the `s3-integrator` leader unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+        access_key (str): Access key of the S3 compatible storage
+        secret_key (str): Secret key of the S3 compatible storage
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, S3_INTEGRATOR_APPLICATION_NAME)
+    sync_credentials_action = await leader_unit.run_action(
+        action_name="sync-s3-credentials",
+        **{
+            "access-key": access_key,
+            "secret-key": secret_key,
+        },
+    )
+    return await ops_test.model.get_action_output(
+        action_uuid=sync_credentials_action.entity_id, wait=120
+    )
+
+async def run_create_backup_action(ops_test: OpsTest) -> dict:
+    """Run the `create-backup` action on the `vault-k8s` leader unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, APP_NAME)
+    create_backup_action = await leader_unit.run_action(
+        action_name="create-backup",
+    )
+    return await ops_test.model.get_action_output(
+        action_uuid=create_backup_action.entity_id, wait=120
+    )
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
@@ -402,5 +465,41 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
     assert action_output.get("ca-certificate", None) is not None
     assert action_output.get("csr", None) is not None
 
-def copy_lib_content() -> None:
-    shutil.copyfile(src=VAULT_KV_LIB_DIR, dst=f"{VAULT_KV_REQUIRER_CHARM_DIR}/{VAULT_KV_LIB_DIR}")
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fails(
+    ops_test: OpsTest, deploy_requiring_charms: None
+):
+    assert ops_test.model
+    s3_integrator = ops_test.model.applications[S3_INTEGRATOR_APPLICATION_NAME]
+    assert s3_integrator
+    await run_s3_integrator_sync_credentials_action(
+        ops_test,
+        secret_key="Dummy secret key",
+        access_key="Dummy access key",
+    )
+    s3_config = {
+        "endpoint": "http://minio-dummy:9000",
+        "bucket": "test-bucket",
+        "region": "local",
+    }
+    await s3_integrator.set_config(s3_config)
+    await ops_test.model.wait_for_idle(
+        apps=[S3_INTEGRATOR_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
+    await ops_test.model.integrate(
+        relation1=APP_NAME,
+        relation2=S3_INTEGRATOR_APPLICATION_NAME,
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        timeout=1000,
+        wait_for_exact_units=NUM_VAULT_UNITS,
+    )
+    vault = ops_test.model.applications[APP_NAME]
+    assert isinstance(vault, Application)
+    create_backup_action_output = await run_create_backup_action(ops_test)
+    assert create_backup_action_output.get("return-code") == 0
