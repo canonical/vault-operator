@@ -503,4 +503,3 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
     assert isinstance(vault, Application)
     create_backup_action_output = await run_create_backup_action(ops_test)
     assert create_backup_action_output.get("return-code") == 0
-

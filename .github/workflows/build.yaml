@@ -11,6 +11,12 @@ jobs:
     
       - name: Install charmcraft
         run: sudo snap install charmcraft --classic
+    
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          juju-channel: 3.4/stable
+          provider: lxd
 
       - name: Build Vault charm
         run: charmcraft pack --verbose
@@ -29,6 +35,12 @@ jobs:
     
       - name: Install charmcraft
         run: sudo snap install charmcraft --classic
+      
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          juju-channel: 3.4/stable
+          provider: lxd
 
       - name: Build KV Requirer charm
         run: |
