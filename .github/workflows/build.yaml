@@ -12,11 +12,14 @@ jobs:
       - name: Install charmcraft
         run: sudo snap install charmcraft --classic
     
-      - name: Setup operator environment
-        uses: charmed-kubernetes/actions-operator@main
-        with:
-          juju-channel: 3.4/stable
-          provider: lxd
+      - name: Install LXD
+        run: |
+          sudo snap install lxd --channel=latest/stable
+          sudo lxd waitready
+          sudo lxd init --auto
+          sudo chmod a+wr /var/snap/lxd/common/lxd/unix.socket
+          lxc network set lxdbr0 ipv6.address none
+          sudo usermod -a -G lxd $USER
 
       - name: Build Vault charm
         run: charmcraft pack --verbose
@@ -36,11 +39,14 @@ jobs:
       - name: Install charmcraft
         run: sudo snap install charmcraft --classic
       
-      - name: Setup operator environment
-        uses: charmed-kubernetes/actions-operator@main
-        with:
-          juju-channel: 3.4/stable
-          provider: lxd
+      - name: Install LXD
+        run: |
+          sudo snap install lxd --channel=latest/stable
+          sudo lxd waitready
+          sudo lxd init --auto
+          sudo chmod a+wr /var/snap/lxd/common/lxd/unix.socket
+          lxc network set lxdbr0 ipv6.address none
+          sudo usermod -a -G lxd $USER
 
       - name: Build KV Requirer charm
         run: |
