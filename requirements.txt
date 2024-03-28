@@ -29,7 +29,9 @@ click==8.1.7
 cosl==0.0.10
     # via -r requirements.in
 cryptography==42.0.5
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   pyopenssl
 hvac==2.1.0
     # via -r requirements.in
 idna==3.6
@@ -70,6 +72,8 @@ pydantic==1.10.14
     #   -r requirements.in
     #   pytest-interface-tester
 pyhcl==0.4.5
+    # via -r requirements.in
+pyopenssl==24.1.0
     # via -r requirements.in
 pytest==8.1.1
     # via pytest-interface-tester

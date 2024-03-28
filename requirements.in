@@ -7,6 +7,7 @@ jsonschema
 ops
 psutil
 pyhcl
+pyopenssl
 pytest-interface-tester
 # cos-agent requires pydantic<2
 pydantic<2
