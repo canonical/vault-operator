@@ -13,7 +13,7 @@ jobs:
         run: sudo snap install charmcraft --classic
     
       - name: Setup LXD
-        uses: canonical/setup-lxd
+        uses: canonical/setup-lxd@main
         with:
             channel: latest/candidate
 
@@ -36,9 +36,9 @@ jobs:
         run: sudo snap install charmcraft --classic
       
       - name: Setup LXD
-        uses: canonical/setup-lxd
+        uses: canonical/setup-lxd@main
         with:
-            channel: latest/candidate
+          channel: latest/candidate
 
       - name: Build KV Requirer charm
         run: |
