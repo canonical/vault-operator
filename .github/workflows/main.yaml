@@ -33,9 +33,6 @@ jobs:
   
   integration-tests:
     needs:
-      - lint-report
-      - static-analysis
-      - unit-tests-with-coverage
       - build
     uses: ./.github/workflows/integration-tests.yaml
     secrets: inherit
@@ -45,6 +42,7 @@ jobs:
       - lint-report
       - static-analysis
       - unit-tests-with-coverage
+      - build
       - integration-tests
     if: ${{ github.ref_name == 'main' }}
     uses: ./.github/workflows/publish-charm.yaml

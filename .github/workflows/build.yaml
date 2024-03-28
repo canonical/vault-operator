@@ -1,10 +1,10 @@
-name: Integration Tests
+name: Build
 
 on:
   workflow_call:
 
 jobs:
-  build:
+  build-vault:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,12 +14,6 @@ jobs:
 
       - name: Build Vault charm
         run: charmcraft pack --verbose
-    
-      - name: Build KV Requirer charm
-        run: |
-          cp lib/charms/vault_k8s/v0/vault_kv.py tests/integration/vault_kv_requirer_operator/lib/charms/vault_k8s/v0/vault_kv.py
-          cd tests/integration/vault_kv_requirer_operator
-          charmcraft pack --verbose
 
       - name: Archive Vault Charm
         uses: actions/upload-artifact@v4
@@ -27,7 +21,21 @@ jobs:
           name: vault-charm
           path: vault_ubuntu-22.04-amd64.charm
           retention-days: 5
-      
+
+  build-kv-requirer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+    
+      - name: Install charmcraft
+        run: sudo snap install charmcraft --classic
+
+      - name: Build KV Requirer charm
+        run: |
+          cp lib/charms/vault_k8s/v0/vault_kv.py tests/integration/vault_kv_requirer_operator/lib/charms/vault_k8s/v0/vault_kv.py
+          cd tests/integration/vault_kv_requirer_operator
+          charmcraft pack --verbose
+
       - name: Archive KV Requirer Charm
         uses: actions/upload-artifact@v4
         with:
