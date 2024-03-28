@@ -17,6 +17,8 @@ from juju.application import Application
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
 
+from tests.integration.helpers import get_leader_unit
+
 logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
@@ -27,6 +29,7 @@ SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 NUM_VAULT_UNITS = 3
+S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
 
 VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
 VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
@@ -127,6 +130,18 @@ async def build_and_deploy(ops_test: OpsTest) -> dict[str, Path | str]:
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
     )
+    await ops_test.model.deploy(
+            "s3-integrator",
+            application_name=S3_INTEGRATOR_APPLICATION_NAME,
+            trust=True,
+            channel="stable",
+        )
+    await ops_test.model.wait_for_idle(
+            apps=[S3_INTEGRATOR_APPLICATION_NAME],
+            status="blocked",
+            timeout=1000,
+            wait_for_exact_units=1,
+        )
     return {"vault-kv-requirer": vault_kv_requirer_charm}
 
 @pytest.fixture(scope="module")
@@ -212,6 +227,49 @@ async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str
         response = client.sys.read_health_status()
         assert response.status_code in (VAULT_STATUS_ACTIVE, VAULT_STATUS_UNSEALED_AND_STANDBY)
 
+async def run_s3_integrator_sync_credentials_action(
+    ops_test: OpsTest, access_key: str, secret_key: str
+) -> dict:
+    """Run the `sync-s3-credentials` action on the `s3-integrator` leader unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+        access_key (str): Access key of the S3 compatible storage
+        secret_key (str): Secret key of the S3 compatible storage
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, S3_INTEGRATOR_APPLICATION_NAME)
+    sync_credentials_action = await leader_unit.run_action(
+        action_name="sync-s3-credentials",
+        **{
+            "access-key": access_key,
+            "secret-key": secret_key,
+        },
+    )
+    return await ops_test.model.get_action_output(
+        action_uuid=sync_credentials_action.entity_id, wait=120
+    )
+
+async def run_create_backup_action(ops_test: OpsTest) -> dict:
+    """Run the `create-backup` action on the `vault-k8s` leader unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, APP_NAME)
+    create_backup_action = await leader_unit.run_action(
+        action_name="create-backup",
+    )
+    return await ops_test.model.get_action_output(
+        action_uuid=create_backup_action.entity_id, wait=120
+    )
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
@@ -401,6 +459,45 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
     assert action_output.get("certificate", None) is not None
     assert action_output.get("ca-certificate", None) is not None
     assert action_output.get("csr", None) is not None
+
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fails(
+    ops_test: OpsTest, deploy_requiring_charms: None
+):
+    assert ops_test.model
+    s3_integrator = ops_test.model.applications[S3_INTEGRATOR_APPLICATION_NAME]
+    assert s3_integrator
+    await run_s3_integrator_sync_credentials_action(
+        ops_test,
+        secret_key="Dummy secret key",
+        access_key="Dummy access key",
+    )
+    s3_config = {
+        "endpoint": "http://minio-dummy:9000",
+        "bucket": "test-bucket",
+        "region": "local",
+    }
+    await s3_integrator.set_config(s3_config)
+    await ops_test.model.wait_for_idle(
+        apps=[S3_INTEGRATOR_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
+    await ops_test.model.integrate(
+        relation1=APP_NAME,
+        relation2=S3_INTEGRATOR_APPLICATION_NAME,
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        timeout=1000,
+        wait_for_exact_units=NUM_VAULT_UNITS,
+    )
+    vault = ops_test.model.applications[APP_NAME]
+    assert isinstance(vault, Application)
+    create_backup_action_output = await run_create_backup_action(ops_test)
+    assert create_backup_action_output.get("return-code") == 0
 
 def copy_lib_content() -> None:
     shutil.copyfile(src=VAULT_KV_LIB_DIR, dst=f"{VAULT_KV_REQUIRER_CHARM_DIR}/{VAULT_KV_LIB_DIR}")
