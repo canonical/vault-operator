@@ -24,10 +24,6 @@ jobs:
     uses: ./.github/workflows/unit-test.yaml
   
   build:
-    needs:
-      - lint-report
-      - static-analysis
-      - unit-tests-with-coverage
     uses: ./.github/workflows/build.yaml
     secrets: inherit
   
