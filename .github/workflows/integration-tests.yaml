@@ -39,4 +39,7 @@ jobs:
         run: pip install tox
 
       - name: Run integration tests
-        run: tox -e integration -- --vault_charm_path="${{ steps.charm-path.outputs.charm_path }}" --kv_requirer_charm_path="${{ steps.kv-requirer-charm-path.outputs.kv_requirer_charm_path }}
+        run: |
+          tox -e integration -- \
+            --vault_charm_path="${{ steps.charm-path.outputs.charm_path }}" \
+            --kv_requirer_charm_path="${{ steps.kv-requirer-charm-path.outputs.kv_requirer_charm_path }}"
