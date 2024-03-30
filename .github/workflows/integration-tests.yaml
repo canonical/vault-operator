@@ -18,7 +18,6 @@ jobs:
       - name: Get Charm Under Test Path
         id: charm-path
         run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
-
       
       - name: Fetch KV Requirer Charm
         uses: actions/download-artifact@v4
