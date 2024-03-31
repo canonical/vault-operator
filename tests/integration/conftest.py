@@ -7,13 +7,27 @@ import os
 import pytest
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add options to the pytest command line.
+
+    This is a pytest hook that is called when the pytest command line is being parsed.
+
+    Args:
+      parser: The pytest command line parser.
+    """
     parser.addoption("--vault_charm_path", action="store", default=None, help="Path to the Vault charm")
     parser.addoption("--kv_requirer_charm_path", action="store", default=None, help="Path to the KV requirer charm")
 
-def pytest_configure(config):
-    vault_charm_path = config.getoption("--vault_charm_path")
-    kv_requirer_charm_path = config.getoption("--kv_requirer_charm_path")
+def pytest_configure(config: pytest.Config) -> None:
+    """Validate the options provided by the user.
+
+    This is a pytest hook that is called after command line options have been parsed.
+
+    Args:
+      config: The pytest configuration object.
+    """
+    vault_charm_path = str(config.getoption("--vault_charm_path"))
+    kv_requirer_charm_path = str(config.getoption("--kv_requirer_charm_path"))
     if not vault_charm_path:
         pytest.exit("The --vault_charm_path option is required. Tests aborted.")
     if not kv_requirer_charm_path:
