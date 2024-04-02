@@ -15,7 +15,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     Args:
       parser: The pytest command line parser.
     """
-    parser.addoption("--vault_charm_path", action="store", default=None, help="Path to the Vault charm")
+    parser.addoption("--charm_path", action="store", default=None, help="Path to the charm under test")
     parser.addoption("--kv_requirer_charm_path", action="store", default=None, help="Path to the KV requirer charm")
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -26,13 +26,13 @@ def pytest_configure(config: pytest.Config) -> None:
     Args:
       config: The pytest configuration object.
     """
-    vault_charm_path = str(config.getoption("--vault_charm_path"))
+    charm_path = str(config.getoption("--charm_path"))
     kv_requirer_charm_path = str(config.getoption("--kv_requirer_charm_path"))
-    if not vault_charm_path:
-        pytest.exit("The --vault_charm_path option is required. Tests aborted.")
+    if not charm_path:
+        pytest.exit("The --charm_path option is required. Tests aborted.")
     if not kv_requirer_charm_path:
         pytest.exit("The --kv_requirer_charm_path option is required. Tests aborted.")
-    if not os.path.exists(vault_charm_path):
-        pytest.exit(f"The path specified does not exist: {vault_charm_path}")
+    if not os.path.exists(charm_path):
+        pytest.exit(f"The path specified does not exist: {charm_path}")
     if not os.path.exists(kv_requirer_charm_path):
         pytest.exit(f"The path specified does not exist: {kv_requirer_charm_path}")

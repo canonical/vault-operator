@@ -115,9 +115,9 @@ async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
 async def deploy_vault(ops_test: OpsTest, request) -> None:
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
-    vault_charm_path = Path(request.config.getoption("--vault_charm_path")).resolve()
+    charm_path = Path(request.config.getoption("--charm_path")).resolve()
     await ops_test.model.deploy(
-        vault_charm_path,
+        charm_path,
         application_name=APP_NAME,
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
