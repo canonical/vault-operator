@@ -2,17 +2,32 @@ name: Integration Tests
 
 on:
   workflow_call:
-    inputs:
-        charm-file-name:
-          description: Tested charm file name
-          required: true
-          type: string
 
 jobs:
   integration-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Fetch Charm Under Test
+        uses: actions/download-artifact@v4
+        with:
+          name: built-charm
+          path: built/
+      
+      - name: Get Charm Under Test Path
+        id: charm-path
+        run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
+      
+      - name: Fetch KV Requirer Charm
+        uses: actions/download-artifact@v4
+        with:
+          name: kv-requirer-charm
+          path: kv-requirer/
+      
+      - name: Get KV Requirer Charm Path
+        id: kv-requirer-charm-path
+        run: echo "charm_path=$(find kv-requirer/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
     
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
@@ -24,12 +39,7 @@ jobs:
         run: pip install tox
 
       - name: Run integration tests
-        run: tox -e integration
-
-      - name: Archive Tested Charm
-        uses: actions/upload-artifact@v4
-        if: ${{ github.ref_name == 'main' }}
-        with:
-          name: tested-charm
-          path: .tox/**/${{ inputs.charm-file-name }}
-          retention-days: 5
+        run: |
+          tox -e integration -- \
+            --charm_path="${{ steps.charm-path.outputs.charm_path }}" \
+            --kv_requirer_charm_path="${{ steps.kv-requirer-charm-path.outputs.charm_path }}"

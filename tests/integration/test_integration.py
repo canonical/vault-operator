@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-import shutil
 import time
 from os.path import abspath
 from pathlib import Path
@@ -113,25 +112,22 @@ async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
     raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 @pytest.fixture(scope="module")
-async def build_and_deploy(ops_test: OpsTest) -> dict[str, Path | str]:
+async def deploy_vault(ops_test: OpsTest, request) -> None:
     """Build the charm-under-test and deploy it."""
     assert ops_test.model
-    copy_lib_content()
-    built_charms = await ops_test.build_charms(".", f"{VAULT_KV_REQUIRER_CHARM_DIR}/")
-    vault_charm = built_charms.get(APP_NAME, "")
-    vault_kv_requirer_charm = built_charms.get("vault-kv-requirer", "")
+    charm_path = Path(request.config.getoption("--charm_path")).resolve()
     await ops_test.model.deploy(
-        vault_charm,
+        charm_path,
         application_name=APP_NAME,
-        trust=True,
         num_units=NUM_VAULT_UNITS,
         config={"common_name": "example.com"},
     )
-    return {"vault-kv-requirer": vault_kv_requirer_charm}
+
 
 @pytest.fixture(scope="module")
-async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str, Path | str]):
+async def deploy_requiring_charms(ops_test: OpsTest, deploy_vault: None, request):
     assert ops_test.model
+    kv_requirer_charm_path = Path(request.config.getoption("--kv_requirer_charm_path")).resolve()
     deploy_self_signed_certificates = ops_test.model.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
@@ -139,7 +135,7 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         channel="stable",
     )
     deploy_vault_kv_requirer = ops_test.model.deploy(
-        build_and_deploy.get("vault-kv-requirer", ""),
+        kv_requirer_charm_path,
         application_name=VAULT_KV_REQUIRER_APPLICATION_NAME,
         num_units=1,
     )
@@ -166,7 +162,7 @@ async def deploy_requiring_charms(ops_test: OpsTest, build_and_deploy: dict[str,
         deploy_self_signed_certificates,
         deploy_vault_kv_requirer,
         deploy_vault_pki_requirer,
-        deploy_grafana_agent
+        deploy_grafana_agent,
     )
     await ops_test.model.wait_for_idle(
         apps=[
@@ -401,6 +397,3 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
     assert action_output.get("certificate", None) is not None
     assert action_output.get("ca-certificate", None) is not None
     assert action_output.get("csr", None) is not None
-
-def copy_lib_content() -> None:
-    shutil.copyfile(src=VAULT_KV_LIB_DIR, dst=f"{VAULT_KV_REQUIRER_CHARM_DIR}/{VAULT_KV_LIB_DIR}")
