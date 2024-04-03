@@ -413,7 +413,6 @@ class VaultOperatorCharm(CharmBase):
             event: ActionEvent
         """
         if not self.unit.is_leader():
-            logger.error("Only leader unit can perform backup operations.")
             event.fail(message="Only leader unit can perform backup operations.")
             return
 
@@ -435,12 +434,10 @@ class VaultOperatorCharm(CharmBase):
                 region=s3_parameters.get("region"),
             )
         except S3Error as e:
-            logger.error("Failed to create S3 session: %s", e)
             event.fail(message="Failed to create S3 session.")
             return
 
         if not (s3.create_bucket(bucket_name=s3_parameters["bucket"])):
-            logger.error("Failed to create S3 bucket")
             event.fail(message="Failed to create S3 bucket.")
             return
         backup_key = self._get_backup_key()
@@ -460,7 +457,6 @@ class VaultOperatorCharm(CharmBase):
             key=backup_key,
         )
         if not content_uploaded:
-            logger.error("Failed to upload backup to S3 bucket")
             event.fail(message="Failed to upload backup to S3 bucket.")
             return
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
