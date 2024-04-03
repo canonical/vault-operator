@@ -433,7 +433,7 @@ class VaultOperatorCharm(CharmBase):
                 endpoint=s3_parameters["endpoint"],
                 region=s3_parameters.get("region"),
             )
-        except S3Error as e:
+        except S3Error:
             event.fail(message="Failed to create S3 session.")
             return
 
