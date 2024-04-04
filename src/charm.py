@@ -435,12 +435,12 @@ class VaultOperatorCharm(CharmBase):
             )
         except S3Error:
             event.fail(message="Failed to create S3 session.")
-            logger.warning("Failed to run create-backup action - Failed to create S3 session.")
+            logger.error("Failed to run create-backup action - Failed to create S3 session.")
             return
 
         if not (s3.create_bucket(bucket_name=s3_parameters["bucket"])):
             event.fail(message="Failed to create S3 bucket.")
-            logger.warning("Failed to run create-backup action - Failed to create S3 bucket.")
+            logger.error("Failed to run create-backup action - Failed to create S3 bucket.")
             return
         backup_key = self._get_backup_key()
         vault = self._get_vault_client()
@@ -451,7 +451,7 @@ class VaultOperatorCharm(CharmBase):
             or vault.is_sealed()
         ):
             event.fail(message="Failed to initialize Vault client.")
-            logger.warning("Failed to run create-backup action - Failed to initialize Vault client.")
+            logger.error("Failed to run create-backup action - Failed to initialize Vault client.")
             return
         response = vault.create_snapshot()
         content_uploaded = s3.upload_content(
@@ -461,7 +461,7 @@ class VaultOperatorCharm(CharmBase):
         )
         if not content_uploaded:
             event.fail(message="Failed to upload backup to S3 bucket.")
-            logger.warning("Failed to run create-backup action - Failed to upload backup to S3 bucket.")
+            logger.error("Failed to run create-backup action - Failed to upload backup to S3 bucket.")
             return
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
