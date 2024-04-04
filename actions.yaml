@@ -16,3 +16,7 @@ create-backup:
   description: >-
     Creates a snapshot of the Raft backend and saves it to the S3 storage.
     Returns backup ID.
+
+list-backups:
+  description: >-
+    Lists all available backups.

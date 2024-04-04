@@ -142,3 +142,71 @@ class TestS3(unittest.TestCase):
                 key="whatever key",
             )
         )
+
+    @patch("boto3.session.Session")
+    def test_given_bucket_doesnt_exist_when_get_object_key_list_then_empty_list_is_returned(self, patch_session):
+        mock_resource = Mock()
+
+        patch_session.return_value.resource.return_value = mock_resource
+        mock_resource.Bucket.side_effect = ClientError(
+            operation_name="GetBucket",
+            error_response={
+                "Error": {"Message": "Random bucket exists error message", "Code" : "NoSuchBucket"},
+
+                },
+        )
+
+        s3 = S3(
+            access_key=self.VALID_S3_PARAMETERS["access-key"],
+            secret_key=self.VALID_S3_PARAMETERS["secret-key"],
+            region=self.VALID_S3_PARAMETERS["region"],
+            endpoint=self.VALID_S3_PARAMETERS["endpoint"],
+        )
+
+        object_list = s3.get_object_key_list(bucket_name="whatever-bucket", prefix="whatever-prefix")
+
+        self.assertEqual(object_list, [])
+
+    @patch("boto3.session.Session")
+    def test_given_client_error_when_get_object_key_list_then_s3_error_is_raised(self, patch_session):
+        mock_resource = Mock()
+
+        patch_session.return_value.resource.return_value = mock_resource
+        mock_resource.Bucket.side_effect = ClientError(
+            operation_name="GetBucket",
+            error_response={
+                "Error": {"Message": "Random bucket exists error message", "Code" : "RandomCode"},
+            },
+        )
+
+        s3 = S3(
+            access_key=self.VALID_S3_PARAMETERS["access-key"],
+            secret_key=self.VALID_S3_PARAMETERS["secret-key"],
+            region=self.VALID_S3_PARAMETERS["region"],
+            endpoint=self.VALID_S3_PARAMETERS["endpoint"],
+        )
+
+        with self.assertRaises(S3Error):
+            s3.get_object_key_list(bucket_name="whatever-bucket", prefix="whatever-prefix")
+
+    @patch("boto3.session.Session")
+    def test_given_bucket_contains_objects_when_get_object_key_list_then_object_list_is_returned(self, patch_session):
+        mock_resource = Mock()
+        mock_bucket = Mock()
+        mock_object = Mock()
+
+        patch_session.return_value.resource.return_value = mock_resource
+        mock_resource.Bucket.return_value = mock_bucket
+        mock_bucket.objects.filter.return_value = [mock_object]
+        mock_object.key = "object-key"
+
+        s3 = S3(
+            access_key=self.VALID_S3_PARAMETERS["access-key"],
+            secret_key=self.VALID_S3_PARAMETERS["secret-key"],
+            region=self.VALID_S3_PARAMETERS["region"],
+            endpoint=self.VALID_S3_PARAMETERS["endpoint"],
+        )
+
+        object_list = s3.get_object_key_list(bucket_name="whatever-bucket", prefix="whatever-prefix")
+
+        self.assertEqual(object_list, ["object-key"])

@@ -6,6 +6,7 @@
 """A machine charm for Vault."""
 
 import datetime
+import json
 import logging
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
@@ -194,6 +195,7 @@ class VaultOperatorCharm(CharmBase):
             self._on_vault_pki_certificate_creation_request,
         )
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
+        self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
 
     @contextmanager
     def temp_maintenance_status(self, message: str):
@@ -465,6 +467,54 @@ class VaultOperatorCharm(CharmBase):
             return
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
+
+    def _on_list_backups_action(self, event: ActionEvent) -> None:
+        """Handle the list-backups action.
+
+        Lists all backups stored in S3 bucket.
+
+        Args:
+            event: ActionEvent
+        """
+        if not self.unit.is_leader():
+            event.fail(message="Only leader unit can perform backup operations.")
+            logger.error("Failed to run list-backups action - Only leader unit can perform backup operations.")
+            return
+
+        if not self._is_relation_created(S3_RELATION_NAME):
+            event.fail(message="Failed to list backups. S3 relation not created.")
+            logger.error("Failed to run list-backups action - S3 relation not created.")
+            return
+
+        if missing_parameters:= self._get_missing_s3_parameters():
+            event.fail(message=f"Failed to list backups. S3 parameters missing: {missing_parameters}")
+            logger.error("Failed to run list-backups action - S3 parameters missing.")
+            return
+
+        s3_parameters = self._get_s3_parameters()
+
+        try:
+            s3 = S3(
+                access_key=s3_parameters["access-key"],
+                secret_key=s3_parameters["secret-key"],
+                endpoint=s3_parameters["endpoint"],
+                region=s3_parameters.get("region"),
+            )
+        except S3Error:
+            event.fail(message="Failed to create S3 session.")
+            logger.error("Failed to run list-backups action - Failed to create S3 session.")
+            return
+
+        try:
+            backup_ids = s3.get_object_key_list(
+                bucket_name=s3_parameters["bucket"], prefix=BACKUP_KEY_PREFIX
+            )
+        except S3Error as e:
+            logger.error("Failed to list backups: %s", e)
+            event.fail(message="Failed to run list-backups action - Failed to list backups.")
+            return
+
+        event.set_results({"backup-ids": json.dumps(backup_ids)})
 
     def _get_backup_key(self) -> str:
         """Return the backup key.

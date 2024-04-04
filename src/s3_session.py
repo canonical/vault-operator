@@ -5,7 +5,7 @@
 """S3 helper class."""
 
 import logging
-from typing import IO, Optional, cast
+from typing import IO, List, Optional, cast
 
 import boto3
 from botocore.config import Config
@@ -128,3 +128,30 @@ class S3:
         except (BotoCoreError, ClientError) as e:
             logger.error("Error uploading content to bucket %s: %s", bucket_name, e)
             return False
+
+    def get_object_key_list(self, bucket_name: str, prefix: str) -> List[str]:
+        """Get list of object key in an S3 bucket.
+
+        Args:
+            bucket_name: S3 bucket name.
+            prefix: Prefix to filter object keys by.
+
+        Returns:
+            List[str]: List of object keys.
+        """
+        keys = []
+        try:
+            bucket = self.s3.Bucket(bucket_name)
+            for obj in bucket.objects.filter(Prefix=prefix):
+                keys.append(obj.key)
+            return keys
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchBucket":  # type: ignore[reportTypedDictNotRequiredAccess]
+                logger.error("Bucket %s does not exist.", bucket_name)
+                return []
+            else:
+                logger.error("Error getting objects list from bucket %s: %s", bucket_name, e)
+                raise S3Error(f"Error getting objects list from bucket {bucket_name}: {e}")
+        except BotoCoreError as e:
+            logger.error("Error getting objects list from bucket %s: %s", bucket_name, e)
+            raise S3Error(f"Error getting objects list from bucket {bucket_name}: {e}")

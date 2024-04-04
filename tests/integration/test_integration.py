@@ -267,6 +267,24 @@ async def run_create_backup_action(ops_test: OpsTest) -> dict:
         action_uuid=create_backup_action.entity_id, wait=120
     )
 
+async def run_list_backups_action(ops_test: OpsTest) -> dict:
+    """Run the `list-backups` action on the `vault-k8s` leader unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, APP_NAME)
+    list_backups_action = await leader_unit.run_action(
+        action_name="list-backups",
+    )
+    return await ops_test.model.get_action_output(
+        action_uuid=list_backups_action.entity_id, wait=120
+    )
+
+
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
     ops_test: OpsTest, deploy_requiring_charms: None
@@ -493,3 +511,24 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
     assert isinstance(vault, Application)
     create_backup_action_output = await run_create_backup_action(ops_test)
     assert create_backup_action_output.get("return-code") == 0
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_integrated_with_s3_when_list_backups_then_action_fails(
+    ops_test: OpsTest, deploy_requiring_charms: None
+):
+    assert ops_test.model
+    await ops_test.model.wait_for_idle(
+        apps=[S3_INTEGRATOR_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        timeout=1000,
+        wait_for_exact_units=NUM_VAULT_UNITS,
+    )
+    vault = ops_test.model.applications[APP_NAME]
+    assert isinstance(vault, Application)
+    list_backups_action_output = await run_list_backups_action(ops_test)
+    assert list_backups_action_output.get("return-code") == 0
