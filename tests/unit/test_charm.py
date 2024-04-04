@@ -926,3 +926,81 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_create_backup_action(event)
 
         event.set_results.assert_called()
+
+    def test_given_s3_relation_not_created_when_list_backup_action_then_action_fails(self):
+        event = Mock()
+        self.harness.set_leader(is_leader=True)
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.fail.assert_called_with(message="Failed to list backups. S3 relation not created.")
+
+    def test_given_unit_not_leader_when_list_backups_action_then_action_fails(self):
+        event = Mock()
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.fail.assert_called_with(message="Only leader unit can perform backup operations.")
+
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    def test_given_missing_s3_parameters_when_list_backups_action_then_action_fails(self, patch_get_s3_connection_info):
+        patch_get_s3_connection_info.return_value = {}
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.fail.assert_called_once()
+        call_args = event.fail.call_args[1]["message"]
+        self.assertIn("S3 parameters missing", call_args)
+
+    @patch("charm.S3")
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    def test_given_s3_session_not_created_when_list_backups_action_then_action_fails(self, patch_get_s3_connection_info, patch_s3):
+        patch_s3.side_effect = S3Error("Failed to create S3 session.")
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.fail.assert_called_with(message="Failed to create S3 session.")
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_s3_list_objects_fails_when_list_backups_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info):
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.get_object_key_list.side_effect": S3Error("Failed to list objects.")
+            }
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.fail.assert_called_with(message="Failed to run list-backups action - Failed to list backups.")
+
+    @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
+    @patch("charm.S3")
+    def test_given_s3_list_objects_succeeds_when_list_backups_action_then_action_succeeds(self, patch_s3, patch_get_s3_connection_info):
+        patch_s3.configure_mock(
+            spec=S3,
+            **{
+                "return_value.get_object_key_list.return_value": ["backup1", "backup2"]
+            }
+        )
+        patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
+        self.harness.set_leader(is_leader=True)
+        self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
+        event = Mock()
+
+        self.harness.charm._on_list_backups_action(event)
+
+        event.set_results.assert_called_with({'backup-ids': '["backup1", "backup2"]'})
