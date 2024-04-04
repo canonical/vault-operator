@@ -500,9 +500,9 @@ class VaultOperatorCharm(CharmBase):
                 endpoint=s3_parameters["endpoint"],
                 region=s3_parameters.get("region"),
             )
-        except S3Error:
+        except S3Error as e:
             event.fail(message="Failed to create S3 session.")
-            logger.error("Failed to run list-backups action - Failed to create S3 session.")
+            logger.error("Failed to run list-backups action - %s", e)
             return
 
         try:
