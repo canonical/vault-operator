@@ -34,6 +34,7 @@ jobs:
         with:
           juju-channel: 3.4/stable
           provider: lxd
+          lxd-channel: 5.20/stable
 
       - name: Install tox
         run: pip install tox
