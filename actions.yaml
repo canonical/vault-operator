@@ -20,3 +20,14 @@ create-backup:
 list-backups:
   description: >-
     Lists all available backups.
+
+restore-backup:
+  description: >-
+    Restores a backup from the S3 storage to the Raft backend.
+    Returns backup ID.
+  params:
+    backup-id:
+      type: string
+      description: >-
+        Backup ID to restore.
+  required: [backup-id]

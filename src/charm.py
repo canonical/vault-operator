@@ -196,6 +196,7 @@ class VaultOperatorCharm(CharmBase):
         )
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
+        self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
 
     @contextmanager
     def temp_maintenance_status(self, message: str):
@@ -414,16 +415,9 @@ class VaultOperatorCharm(CharmBase):
         Args:
             event: ActionEvent
         """
-        if not self.unit.is_leader():
-            event.fail(message="Only leader unit can perform backup operations.")
-            return
-
-        if not self._is_relation_created(S3_RELATION_NAME):
-            event.fail(message="Failed to perform backup. S3 relation not created.")
-            return
-
-        if missing_parameters:= self._get_missing_s3_parameters():
-            event.fail(message=f"Failed to perform backup. S3 parameters missing: {missing_parameters}")
+        s3_pre_requisites_err = self._check_s3_pre_requisites()
+        if s3_pre_requisites_err:
+            event.fail(message=f"S3 pre-requisites not met. {s3_pre_requisites_err}.")
             return
 
         s3_parameters = self._get_s3_parameters()
@@ -455,6 +449,11 @@ class VaultOperatorCharm(CharmBase):
             event.fail(message="Failed to initialize Vault client.")
             logger.error("Failed to run create-backup action - Failed to initialize Vault client.")
             return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            event.fail(message="Failed to authenticate to Vault.")
+            logger.error("Failed to run create-backup action - Failed to authenticate to Vault.")
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
         response = vault.create_snapshot()
         content_uploaded = s3.upload_content(
             content=response.raw,
@@ -476,19 +475,9 @@ class VaultOperatorCharm(CharmBase):
         Args:
             event: ActionEvent
         """
-        if not self.unit.is_leader():
-            event.fail(message="Only leader unit can perform backup operations.")
-            logger.error("Failed to run list-backups action - Only leader unit can perform backup operations.")
-            return
-
-        if not self._is_relation_created(S3_RELATION_NAME):
-            event.fail(message="Failed to list backups. S3 relation not created.")
-            logger.error("Failed to run list-backups action - S3 relation not created.")
-            return
-
-        if missing_parameters:= self._get_missing_s3_parameters():
-            event.fail(message=f"Failed to list backups. S3 parameters missing: {missing_parameters}")
-            logger.error("Failed to run list-backups action - S3 parameters missing.")
+        s3_pre_requisites_err = self._check_s3_pre_requisites()
+        if s3_pre_requisites_err:
+            event.fail(message=f"S3 pre-requisites not met. {s3_pre_requisites_err}.")
             return
 
         s3_parameters = self._get_s3_parameters()
@@ -515,6 +504,82 @@ class VaultOperatorCharm(CharmBase):
             return
 
         event.set_results({"backup-ids": json.dumps(backup_ids)})
+
+    def _on_restore_backup_action(self, event: ActionEvent) -> None:
+        """Handle the restore-backup action.
+
+        Restores the snapshot with the provided ID.
+
+        Args:
+            event: ActionEvent
+        """
+        s3_pre_requisites_err = self._check_s3_pre_requisites()
+        if s3_pre_requisites_err:
+            event.fail(message=f"S3 pre-requisites not met. {s3_pre_requisites_err}.")
+            return
+
+        s3_parameters = self._get_s3_parameters()
+        try:
+            s3 = S3(
+                access_key=s3_parameters["access-key"],
+                secret_key=s3_parameters["secret-key"],
+                endpoint=s3_parameters["endpoint"],
+                region=s3_parameters.get("region"),
+            )
+        except S3Error as e:
+            logger.error("Failed to create S3 session: %s", e)
+            event.fail(message="Failed to create S3 session.")
+            return
+        try:
+            snapshot = s3.get_content(
+                bucket_name=s3_parameters["bucket"],
+                object_key=event.params.get("backup-id"),  # type: ignore[reportArgumentType]
+            )
+        except S3Error as e:
+            logger.error("Failed to retrieve snapshot from S3 storage: %s", e)
+            event.fail(message="Failed to retrieve snapshot from S3 storage.")
+            return
+        if not snapshot:
+            logger.error("Backup %s not found in S3 bucket", event.params.get("backup-id"))
+            event.fail(message="Backup not found in S3 bucket.")
+            return
+        vault = self._get_vault_client()
+        if (
+            not vault
+            or not vault.is_api_available()
+        ):
+            logger.error("Failed to restore vault. Vault API is not available.")
+            event.fail(message="Failed to restore vault. Vault API is not available.")
+            return
+        if not (approle_auth := self._get_vault_approle_secret()):
+            logger.error("Failed to authenticate to Vault.")
+            event.fail(message="Failed to authenticate to Vault.")
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        try:
+            response = vault.restore_snapshot(snapshot)  # type: ignore[arg-type]
+        except VaultClientError as e:
+            logger.error("Failed to restore vault: %s", e)
+            event.fail(message="Failed to restore vault.")
+            return
+        if not 200 <= response.status_code < 300:
+            logger.error("Failed to restore snapshot: %s", response.json())
+            event.fail(message="Failed to restore snapshot. Vault API returned an error.")
+            return
+
+        self._remove_vault_approle_secret()
+
+        event.set_results({"restored": event.params.get("backup-id")})
+
+    def _check_s3_pre_requisites(self) -> Optional[str]:
+        """Check if the S3 pre-requisites are met."""
+        if not self.unit.is_leader():
+            return "Only leader unit can perform backup operations"
+        if not self._is_relation_created(S3_RELATION_NAME):
+            return "S3 relation not created"
+        if missing_parameters:= self._get_missing_s3_parameters():
+            return "S3 parameters missing ({}):".format(", ".join(missing_parameters))
+        return None
 
     def _get_backup_key(self) -> str:
         """Return the backup key.
@@ -861,6 +926,14 @@ class VaultOperatorCharm(CharmBase):
         if not (role_id := content.get("role-id")) or not (secret_id := content.get("secret-id")):
             return None
         return (role_id, secret_id)
+
+    def _remove_vault_approle_secret(self) -> None:
+        """Remove the approle secret if it exists."""
+        try:
+            juju_secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+            juju_secret.remove_all_revisions()
+        except SecretNotFoundError:
+            return
 
     def _install_vault_snap(self) -> None:
         """Installs the Vault snap in the machine."""

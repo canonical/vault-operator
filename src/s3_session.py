@@ -10,6 +10,7 @@ from typing import IO, List, Optional, cast
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from botocore.response import StreamingBody
 from mypy_boto3_s3.literals import BucketLocationConstraintType
 from mypy_boto3_s3.service_resource import Bucket
 from mypy_boto3_s3.type_defs import CreateBucketConfigurationTypeDef
@@ -155,3 +156,34 @@ class S3:
         except BotoCoreError as e:
             logger.error("Error getting objects list from bucket %s: %s", bucket_name, e)
             raise S3Error(f"Error getting objects list from bucket {bucket_name}: {e}")
+
+    def get_content(self, bucket_name: str, object_key: str) -> Optional[StreamingBody]:
+        """Get object content from S3 bucket by key.
+
+        Args:
+            bucket_name: S3 bucket name.
+            object_key: S3 object key.
+
+        Returns:
+            Optional[StreamingBody]: File like object with the content of the S3 object.
+        """
+        bucket = self.s3.Bucket(bucket_name)
+        try:
+            obj = bucket.Object(object_key).get()
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchKey":  # type: ignore[reportTypedDictNotRequiredAccess]
+                logger.error("Object %s does not exist.", object_key)
+                return None
+            elif e.response["Error"]["Code"] == "NoSuchBucket":  # type: ignore[reportTypedDictNotRequiredAccess]
+                logger.error("Bucket %s does not exist.", bucket_name)
+                return None
+            else:
+                logger.error(
+                    "Error getting object %s from bucket %s: %s", object_key, bucket_name, e
+                )
+                raise S3Error(f"Error getting object {object_key} from bucket {bucket_name}: {e}")
+        except BotoCoreError as e:
+            logger.error("Error getting object %s from bucket %s: %s", object_key, bucket_name, e)
+            raise S3Error(f"Error getting object {object_key} from bucket {bucket_name}: {e}")
+
+        return obj["Body"]
