@@ -42,3 +42,11 @@ path "sys/storage/raft/autopilot/state" {
 path "charm-*" {
   capabilities = [ "create", "read", "update", "delete", "list", "sudo" ]
 }
+
+# Allow backup and restore of the raft snapshot
+path "sys/storage/raft/snapshot" {
+  capabilities = ["read"]
+}
+path "sys/storage/raft/snapshot-force" {
+  capabilities = ["update"]
+}
