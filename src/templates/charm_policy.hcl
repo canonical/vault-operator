@@ -34,13 +34,24 @@ path "sys/mounts/" {
   capabilities = ["list"]
 }
 
+# Allow operations under the charm prefix
+path "charm-*" {
+  capabilities = [ "create", "read", "update", "delete", "list", "sudo" ]
+}
+
+# Allow reading the health of the raft backend
 path "sys/storage/raft/autopilot/state" {
   capabilities = ["read"]
 }
 
-# Allow operations under the charm prefix
-path "charm-*" {
-  capabilities = [ "create", "read", "update", "delete", "list", "sudo" ]
+# Allow reading raft peers
+path "sys/storage/raft/configuration" {
+  capabilities = ["read"]
+}
+
+# Allow removing nodes from the raft backend
+path "sys/storage/raft/remove-peer" {
+  capabilities = ["update"]
 }
 
 # Allow backup and restore of the raft snapshot

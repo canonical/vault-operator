@@ -38,7 +38,7 @@ from cryptography import x509
 from jinja2 import Environment, FileSystemLoader
 from machine import Machine
 from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
-from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent
+from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
 from s3_session import S3, S3Error
@@ -176,6 +176,7 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.update_status, self._configure)
         self.framework.observe(self.on.config_changed, self._configure)
+        self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
         self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
         self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
@@ -326,7 +327,7 @@ class VaultOperatorCharm(CharmBase):
             return
         event.add_status(ActiveStatus())
 
-    def _configure(self, _):  # noqa: C901
+    def _configure(self, _):
         """Handle Vault installation.
 
         This includes:
@@ -371,6 +372,16 @@ class VaultOperatorCharm(CharmBase):
 
         if vault.is_active() and not vault.is_raft_cluster_healthy():
             logger.warning("Raft cluster is not healthy: %s", vault.get_raft_cluster_state())
+
+    def _on_remove(self, event: RemoveEvent):
+        """Handle remove charm event.
+
+        Removes the vault service and the raft data and removes the node from the raft cluster.
+        """
+        self._remove_node_from_raft_cluster()
+        if self._vault_service_is_running():
+            self.machine.stop(VAULT_SNAP_NAME)
+        self._delete_vault_data()
 
     def _on_new_vault_kv_client_attached(self, event: NewVaultKvClientAttachedEvent):
         """Handle vault-kv-client attached event."""
@@ -570,6 +581,50 @@ class VaultOperatorCharm(CharmBase):
         self._remove_vault_approle_secret()
 
         event.set_results({"restored": event.params.get("backup-id")})
+
+    def _vault_service_is_running(self) -> bool:
+        """Check if the Vault service is running."""
+        return self.machine.get_service(process=VAULT_SNAP_NAME) is not None
+
+    def _delete_vault_data(self) -> None:
+        """Delete Vault's data."""
+        try:
+            self.machine.remove_path(path=f"{VAULT_STORAGE_PATH}/vault.db")
+            logger.info("Removed Vault's main database")
+        except ValueError:
+            logger.info("No Vault database to remove")
+        try:
+            self.machine.remove_path(path=f"{VAULT_STORAGE_PATH}/raft/raft.db")
+            logger.info("Removed Vault's Raft database")
+        except ValueError:
+            logger.info("No Vault raft database to remove")
+
+
+    def _remove_node_from_raft_cluster(self):
+        """Remove the node from the raft cluster."""
+        if not (approle_auth := self._get_vault_approle_secret()):
+            logger.error("Failed to authenticate to Vault")
+            return
+        api_address = self._api_address
+        if not api_address:
+            logger.error("Can't remove node from cluster - Vault API address is not available")
+            return
+        vault = Vault(url=api_address, ca_cert_path=None)
+        if not vault.is_api_available():
+            logger.error("Can't remove node from cluster - Vault API is not available")
+            return
+        if not vault.is_initialized():
+            logger.error("Can't remove node from cluster - Vault is not initialized")
+            return
+        if vault.is_sealed():
+            logger.error("Can't remove node from cluster - Vault is sealed")
+            return
+        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        if (
+            vault.is_node_in_raft_peers(node_id=self._node_id)
+            and vault.get_num_raft_peers() > 1
+        ):
+            vault.remove_raft_node(node_id=self._node_id)
 
     def _check_s3_pre_requisites(self) -> Optional[str]:
         """Check if the S3 pre-requisites are met."""

@@ -5,16 +5,15 @@
 import asyncio
 import logging
 import time
-from os.path import abspath
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, Optional, Tuple
 
-import hvac
 import pytest
 import yaml
 from juju.application import Application
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
+from vault import Vault
 
 from tests.integration.helpers import get_leader_unit
 
@@ -32,13 +31,6 @@ S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
 
 VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
 VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
-
-# Vault status codes, see
-# https://developer.hashicorp.com/vault/api-docs/system/health for more details
-VAULT_STATUS_ACTIVE = 200
-VAULT_STATUS_UNSEALED_AND_STANDBY = 429
-VAULT_STATUS_NOT_INITIALIZED = 501
-VAULT_STATUS_SEALED = 503
 
 
 async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) -> dict:
@@ -60,23 +52,6 @@ async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) ->
         action_name="get-ca-certificate",
     )
     return await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=timeout)
-
-
-async def validate_vault_status(
-    expected_vault_status_code: int | List[int], ops_test: OpsTest, vault_client: hvac.Client
-):
-    assert ops_test.model
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="blocked",
-            timeout=1000,
-        )
-    response = vault_client.sys.read_health_status()
-    if isinstance(expected_vault_status_code, list):
-        assert response.status_code in expected_vault_status_code
-    else:
-        assert response.status_code == expected_vault_status_code
 
 
 async def get_leader(app: Application) -> Unit | None:
@@ -182,7 +157,6 @@ async def deploy_requiring_charms(ops_test: OpsTest, deploy_vault: None, request
             ],
         status="active",
         timeout=1000,
-        wait_for_exact_units=1,
     )
     await ops_test.model.wait_for_idle(
             apps=[S3_INTEGRATOR_APPLICATION_NAME],
@@ -197,33 +171,18 @@ async def deploy_requiring_charms(ops_test: OpsTest, deploy_vault: None, request
     await asyncio.gather(*remove_coroutines)
 
 
-
-async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, keys: str) -> None:
+async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, unseal_key: str) -> None:
     """Unseal all the vault units."""
     assert ops_test.model
     app = ops_test.model.applications[APP_NAME]
     assert isinstance(app, Application)
-    clients = []
     for unit in app.units:
         assert isinstance(unit, Unit)
-        unit_endpoint = f"https://{unit.public_address}:8200"
-        client = hvac.Client(url=unit_endpoint, verify=abspath(ca_file_name))
-        if client.sys.read_health_status() not in (
-            VAULT_STATUS_ACTIVE,
-            VAULT_STATUS_UNSEALED_AND_STANDBY,
-        ):
-            client.sys.submit_unseal_keys(keys)
-        clients.append(client)
-
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="blocked",
-            timeout=1000,
-        )
-    for client in clients:
-        response = client.sys.read_health_status()
-        assert response.status_code in (VAULT_STATUS_ACTIVE, VAULT_STATUS_UNSEALED_AND_STANDBY)
+        unit_address = unit.public_address
+        assert unit_address
+        vault = Vault(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
+        vault.unseal(unseal_key)
+        vault.wait_for_node_to_be_unsealed()
 
 async def run_s3_integrator_sync_credentials_action(
     ops_test: OpsTest, access_key: str, secret_key: str
@@ -303,6 +262,63 @@ async def run_restore_backup_action(ops_test: OpsTest, backup_id: str) -> dict:
         action_uuid=restore_backup_action.entity_id, wait=120
     )
 
+@pytest.fixture(scope="module")
+async def initialize_vault(ops_test: OpsTest, deploy_vault: None) -> Tuple[str, str]:
+    """Initialize the leader vault unit and return the root token and unseal key.
+
+    Returns:
+        Tuple[str, str]: Root token and unseal key
+    """
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    leader = await get_leader(app)
+    assert leader
+    leader_ip = leader.public_address
+    vault_url = f"https://{leader_ip}:8200"
+    action_output = await run_get_ca_certificate_action(ops_test)
+    ca_certificate = action_output["ca-certificate"]
+    assert ca_certificate
+    ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
+    with open(ca_file_location, mode="w+") as ca_file:
+        ca_file.write(ca_certificate)
+    vault = Vault(url=vault_url, ca_file_location=ca_file_location)
+    root_token, unseal_key = vault.initialize()
+    return root_token, unseal_key
+
+
+
+async def authorize_charm(ops_test: OpsTest, root_token: str) -> Any | Dict:
+    """Authorize the charm to interact with Vault.
+
+    Returns:
+        Any | Dict: Action output
+    """
+    assert ops_test.model
+    leader_unit = await get_leader_unit(ops_test.model, APP_NAME)
+    authorize_action = await leader_unit.run_action(
+        action_name="authorize-charm",
+        **{
+            "token": root_token,
+        },
+    )
+    result = await ops_test.model.get_action_output(
+        action_uuid=authorize_action.entity_id, wait=120
+    )
+    return result
+
+async def get_leader_unit_address(ops_test: OpsTest) -> Optional[str]:
+    """Get the address of the leader unit.
+
+    Returns:
+        Optional[str]: The address of the leader unit
+    """
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    leader = await get_leader(app)
+    assert leader
+    return leader.public_address
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_build_when_deploy_then_status_blocked(
@@ -348,54 +364,125 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
         )
     assert isinstance(unit := ops_test.model.units.get(f"{APP_NAME}/0"), Unit)
     unit_ip = unit.public_address
-    vault_endpoint = f"https://{unit_ip}:8200"
+    vault_url = f"https://{unit_ip}:8200"
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
     ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
     with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
-    client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
-    response = client.sys.read_health_status()
-    assert response.status_code == VAULT_STATUS_NOT_INITIALIZED
-
+    vault = Vault(url=vault_url, ca_file_location=ca_file_location)
+    assert not vault.is_initialized()
 
 @pytest.mark.abort_on_fail
 async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_authorized_then_status_is_active(
-    ops_test: OpsTest, deploy_requiring_charms: None
+    ops_test: OpsTest, deploy_requiring_charms: None, initialize_vault: Tuple[str, str]
 ):
     """Test that Vault is active and running correctly after Vault is initialized, unsealed and authorized."""
     assert ops_test.model
-    app = ops_test.model.applications[APP_NAME]
-    assert isinstance(app, Application)
-    leader = await get_leader(app)
-    assert leader
-
-    leader_ip = leader.public_address
-    vault_endpoint = f"https://{leader_ip}:8200"
-
+    root_token, unseal_key = initialize_vault
+    leader_unit_address = await get_leader_unit_address(ops_test)
+    assert leader_unit_address
     action_output = await run_get_ca_certificate_action(ops_test)
     ca_certificate = action_output["ca-certificate"]
     ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
     with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
-    client = hvac.Client(url=vault_endpoint, verify=ca_file_location)
-    await validate_vault_status(VAULT_STATUS_NOT_INITIALIZED, ops_test, client)
-
-    init_output = client.sys.initialize(secret_shares=1, secret_threshold=1)
-    keys = init_output["keys"]
-    root_token = init_output["root_token"]
-    await validate_vault_status(VAULT_STATUS_SEALED, ops_test, client)
-    client.sys.submit_unseal_keys(keys)
-    await validate_vault_status(VAULT_STATUS_ACTIVE, ops_test, client)
-
-    await unseal_all_vault_units(ops_test, ca_file.name, keys)
-    await leader.run_action("authorize-charm", token=root_token)
-    async with ops_test.fast_forward():
+    vault = Vault(url=f"https://{leader_unit_address}:8200", ca_file_location=ca_file_location, token=root_token)
+    assert vault.is_sealed()
+    vault.unseal(unseal_key)
+    vault.wait_for_node_to_be_unsealed()
+    assert vault.is_active()
+    async with ops_test.fast_forward(fast_interval="10s"):
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="blocked",
+            timeout=1000,
+            wait_for_exact_units=NUM_VAULT_UNITS,
+        )
+        await unseal_all_vault_units(ops_test, ca_file.name, unseal_key)
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="blocked",
+            timeout=1000,
+            wait_for_exact_units=NUM_VAULT_UNITS,
+        )
+        await authorize_charm(ops_test, root_token)
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
             timeout=1000,
+            wait_for_exact_units=NUM_VAULT_UNITS,
         )
+    vault.wait_for_raft_nodes(expected_num_nodes=NUM_VAULT_UNITS)
+
+@pytest.mark.abort_on_fail
+async def test_given_application_is_deployed_when_scale_up_then_status_is_active(
+    ops_test: OpsTest,
+    deploy_requiring_charms: None,
+    initialize_vault: Tuple[str, str],
+):
+    assert ops_test.model
+    root_token, unseal_key = initialize_vault
+    num_units = NUM_VAULT_UNITS + 1
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    await app.add_unit(count=1)
+
+    async with ops_test.fast_forward(fast_interval="10s"):
+        await ops_test.model.wait_for_idle(
+                apps=[APP_NAME],
+                status="blocked",
+                timeout=1000,
+                wait_for_at_least_units=1,
+            )
+
+    action_output = await run_get_ca_certificate_action(ops_test)
+    ca_certificate = action_output["ca-certificate"]
+    ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
+    with open(ca_file_location, mode="w+") as ca_file:
+        ca_file.write(ca_certificate)
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    new_unit = app.units[-1]
+    new_unit_address = new_unit.public_address
+    vault = Vault(url=f"https://{new_unit_address}:8200", ca_file_location=ca_file_location, token=root_token)
+    vault.unseal(unseal_key=unseal_key)
+    vault.wait_for_node_to_be_unsealed()
+    async with ops_test.fast_forward(fast_interval="10s"):
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            timeout=1000,
+            status="active",
+        )
+
+    vault.wait_for_raft_nodes(expected_num_nodes=num_units)
+
+@pytest.mark.abort_on_fail
+async def test_given_application_is_deployed_when_scale_down_then_status_is_active(
+    ops_test: OpsTest,
+    deploy_requiring_charms: None,
+):
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    action_output = await run_get_ca_certificate_action(ops_test)
+    ca_certificate = action_output["ca-certificate"]
+    assert ca_certificate
+    ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
+    with open(ca_file_location, mode="w+") as ca_file:
+        ca_file.write(ca_certificate)
+    new_unit = app.units[-1]
+    await new_unit.remove()
+    async with ops_test.fast_forward(fast_interval="10s"):
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            timeout=1000,
+            status="active",
+            wait_for_exact_units=NUM_VAULT_UNITS,
+        )
+    # Note: We are not verifying the number of nodes in the raft cluster
+    # because the Vault API address is often not available during the
+    # unit removal.
 
 @pytest.mark.abort_on_fail
 async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_status_is_active(
@@ -406,11 +493,11 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
         relation1=f"{APP_NAME}:cos-agent",
         relation2=f"{GRAFANA_AGENT_APPLICATION_NAME}:cos-agent",
     )
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="10s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
-            status="active",
             timeout=1000,
+            status="active",
         )
 
 @pytest.mark.abort_on_fail
@@ -422,11 +509,12 @@ async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_t
         relation1=f"{APP_NAME}:vault-kv",
         relation2=f"{VAULT_KV_REQUIRER_APPLICATION_NAME}:vault-kv",
     )
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME, VAULT_KV_REQUIRER_APPLICATION_NAME],
-        status="active",
-        timeout=1000,
-    )
+    async with ops_test.fast_forward(fast_interval="10s"):
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME, VAULT_KV_REQUIRER_APPLICATION_NAME],
+            status="active",
+            timeout=1000,
+        )
 
 @pytest.mark.abort_on_fail
 async def test_given_vault_kv_requirer_related_when_create_secret_then_secret_is_created(
@@ -524,7 +612,7 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
         apps=[APP_NAME],
         status="active",
         timeout=1000,
-        wait_for_exact_units=NUM_VAULT_UNITS,
+         wait_for_exact_units=NUM_VAULT_UNITS,
     )
     vault = ops_test.model.applications[APP_NAME]
     assert isinstance(vault, Application)
