@@ -110,6 +110,19 @@ class Machine(WorkloadBase):
             os.kill(pid, signal.SIGTERM)
             logger.info("Stopped process %s", process)
 
+    def get_service(self, process: str) -> Optional[psutil.Process]:
+        """Get a service.
+
+        Args:
+            process: The name of the process
+
+        Returns:
+            psutil.Process: The process
+        """
+        if pid := self._find_process(process):
+            return psutil.Process(pid)
+        return None
+
     def _find_process(self, process: str) -> Optional[int]:
         """Find a process.
 

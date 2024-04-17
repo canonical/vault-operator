@@ -1149,3 +1149,35 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_restore_backup_action(event)
 
         event.fail.assert_called_with(message="Failed to restore vault.")
+
+    # Test remove
+    @patch("ops.model.Model.get_binding")
+    def test_given_vault_unsealed_when_on_remove_then_node_removed_from_raft_cluster(self, patch_get_binding):
+        self._set_peer_relation()
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        patch_get_binding.return_value = MockBinding(bind_address="1.2.3.4", ingress_address="2.2.2.2")
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "is_api_available.return_value": True,
+                "is_initialized.return_value": True,
+                "is_sealed.return_value": False,
+                "get_num_raft_peers.return_value": 3
+            },
+        )
+
+        self.harness.charm.on.remove.emit()
+
+        self.mock_vault.remove_raft_node.assert_called_once()
+
+    def test_given_when_on_remove_then_raft_dbs_are_removed(self):
+        self.harness.charm.on.remove.emit()
+
+        self.mock_machine.remove_path.assert_has_calls(calls=[
+            call(path=f"{VAULT_STORAGE_PATH}/vault.db"),
+            call(path=f"{VAULT_STORAGE_PATH}/raft/raft.db"),
+        ]
+        )
