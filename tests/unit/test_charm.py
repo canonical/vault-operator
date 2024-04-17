@@ -469,7 +469,7 @@ class TestCharm(unittest.TestCase):
 
         secret_content = self.harness.model.get_secret(
             label=VAULT_CHARM_APPROLE_SECRET_LABEL
-        ).get_content()
+        ).get_content(refresh=True)
 
         assert secret_content["role-id"] == "approle_id"
         assert secret_content["secret-id"] == "secret_id"

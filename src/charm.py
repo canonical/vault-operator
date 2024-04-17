@@ -741,7 +741,7 @@ class VaultOperatorCharm(CharmBase):
                 content={"role-id": role_id, "role-secret-id": role_secret_id},
                 label=juju_secret_label,
             )
-        credentials = secret.get_content()
+        credentials = secret.get_content(refresh=True)
         credentials["role-secret-id"] = role_secret_id
         secret.set_content(credentials)
         return secret
@@ -940,7 +940,7 @@ class VaultOperatorCharm(CharmBase):
         if not self._pki_csr_secret_set():
             raise RuntimeError("PKI CSR secret not set.")
         secret = self.model.get_secret(label=VAULT_PKI_CSR_SECRET_LABEL)
-        return secret.get_content()["csr"]
+        return secret.get_content(refresh=True)["csr"]
 
     def _pki_csr_secret_set(self) -> bool:
         """Return whether PKI CSR secret is stored."""
