@@ -220,7 +220,7 @@ class TestCharm(unittest.TestCase):
 
         self.mock_snap_cache.assert_called_with()
         vault_snap.ensure.assert_called_with(
-            SnapState.Latest, channel="1.15/beta", revision="2181"
+            SnapState.Latest, channel="1.15/stable", revision="2226"
         )
         vault_snap.hold.assert_called()
 
