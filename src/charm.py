@@ -30,6 +30,7 @@ from charms.vault_k8s.v0.vault_client import (
     VaultClientError,
 )
 from charms.vault_k8s.v0.vault_kv import NewVaultKvClientAttachedEvent, VaultKvProvides
+from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from charms.vault_k8s.v0.vault_tls import (
     File,
     VaultTLSManager,
@@ -41,7 +42,6 @@ from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundE
 from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
-from s3_session import S3, S3Error
 
 logger = logging.getLogger(__name__)
 

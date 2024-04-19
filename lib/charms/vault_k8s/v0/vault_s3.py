@@ -1,8 +1,20 @@
+
 #!/usr/bin/env python3
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""S3 helper class."""
+"""S3 helper functions for Vault charms.
+
+## Usage
+Add the following dependencies to the charm's requirements.txt file:
+
+    ```
+    boto3
+    boto3-stubs[s3]
+    ```
+
+"""
+
 
 import logging
 from typing import IO, List, Optional, cast
@@ -14,6 +26,17 @@ from botocore.response import StreamingBody
 from mypy_boto3_s3.literals import BucketLocationConstraintType
 from mypy_boto3_s3.service_resource import Bucket
 from mypy_boto3_s3.type_defs import CreateBucketConfigurationTypeDef
+
+# The unique Charmhub library identifier, never change it
+LIBID = "6a14cfe8d3134db4a6c47c4cf7b7d5d6"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = 0
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = 1
+
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +99,7 @@ class S3:
         """Return whether the bucket exists."""
         try:
             bucket.meta.client.head_bucket(Bucket=bucket.name)
-        except ClientError:
-            return False
-        except BotoCoreError:
+        except (ClientError, BotoCoreError):
             return False
         return True
 
