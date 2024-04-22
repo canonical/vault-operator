@@ -33,8 +33,8 @@ from charms.vault_k8s.v0.vault_client import (
     Vault,
     VaultClientError,
 )
+from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL
-from s3_session import S3, S3Error
 
 S3_LIB_PATH = "charms.data_platform_libs.v0.s3"
 PEER_RELATION_NAME = "vault-peers"
