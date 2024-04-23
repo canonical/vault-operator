@@ -1317,7 +1317,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_ca_certificate_and_api_address_are_available_when_generate_vault_scrape_configs_then_config_is_generated(  # noqa: E501
+    def test_given_ca_certificate_and_bind_address_are_available_when_generate_vault_scrape_configs_then_config_is_generated(  # noqa: E501
         self,
         patch_get_binding,
     ):
@@ -1341,4 +1341,13 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(
             actual_config,
             expected_config,
+        )
+
+    def test_given_bind_address_not_available_when_generate_vault_scrape_configs_then_config_is_empty(  # noqa: E501
+        self
+    ):
+        actual_config = self.harness.charm.generate_vault_scrape_configs()
+        self.assertEqual(
+            actual_config,
+            [],
         )

@@ -152,6 +152,9 @@ class VaultOperatorCharm(CharmBase):
         self.machine = Machine()
         self._cos_agent = COSAgentProvider(
             self,
+            refresh_events=[
+                self.on[PEER_RELATION_NAME].relation_changed,
+            ],
             scrape_configs=self.generate_vault_scrape_configs,
         )
         self.tls = VaultTLSManager(
@@ -193,8 +196,14 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
 
-    def generate_vault_scrape_configs(self):
-        """Generate the scrape configs for the COS agent."""
+    def generate_vault_scrape_configs(self) -> Optional[List[Dict]]:
+        """Generate the scrape configs for the COS agent.
+
+        Returns:
+            The scrape configs for the COS agent or an empty list.
+        """
+        if not self._is_peer_relation_created():
+            return []
         return [
                 {
                     "scheme": "https",
@@ -266,8 +275,8 @@ class VaultOperatorCharm(CharmBase):
 
         # The secret already exists, so we will update it and log a warning.
         logger.warning(
-            f"Secret with label `{VAULT_CHARM_APPROLE_SECRET_LABEL}` already exists.\
-            Is the charm already authorized?"
+            "Secret with label `%s` already exists. Is the charm already authorized?",
+            VAULT_CHARM_APPROLE_SECRET_LABEL,
         )
         secret.set_content(secret_content)
         return secret
@@ -290,8 +299,8 @@ class VaultOperatorCharm(CharmBase):
         ):
             event.add_status(
                 BlockedStatus(
-                    "Common name is not set in the charm config,\
-                    cannot configure PKI secrets engine"
+                    "Common name is not set in the charm config, "
+                    "cannot configure PKI secrets engine"
                 )
             )
             return
