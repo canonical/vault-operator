@@ -1243,3 +1243,30 @@ class TestCharm(unittest.TestCase):
             call(path=f"{VAULT_STORAGE_PATH}/raft/raft.db"),
         ]
         )
+
+    @patch("ops.model.Model.get_binding")
+    def test_given_ca_certificate_and_api_address_are_available_when_generate_vault_scrape_configs_then_config_is_generated(
+        self,
+        patch_get_binding,
+    ):
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+        self.mock_vault_tls_manager.pull_tls_file_from_workload.return_value = "whatever ca cert"
+        self._set_peer_relation()
+        actual_config = self.harness.charm.generate_vault_scrape_configs()
+        expected_config = [
+            {
+                "scheme": "https",
+                "tls_config": {
+                    "insecure_skip_verify": False,
+                    "ca": "whatever ca cert",
+                },
+                "metrics_path": "/v1/sys/metrics",
+                "static_configs": [{"targets": ["1.2.1.2:8200"]}],
+            }
+        ]
+        self.assertEqual(
+            actual_config,
+            expected_config,
+        )
