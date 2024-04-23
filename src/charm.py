@@ -266,7 +266,8 @@ class VaultOperatorCharm(CharmBase):
 
         # The secret already exists, so we will update it and log a warning.
         logger.warning(
-            f"Secret with label `{VAULT_CHARM_APPROLE_SECRET_LABEL}` already exists. Is the charm already authorized?"
+            f"Secret with label `{VAULT_CHARM_APPROLE_SECRET_LABEL}` already exists.\
+            Is the charm already authorized?"
         )
         secret.set_content(secret_content)
         return secret
@@ -289,7 +290,8 @@ class VaultOperatorCharm(CharmBase):
         ):
             event.add_status(
                 BlockedStatus(
-                    "Common name is not set in the charm config, cannot configure PKI secrets engine"
+                    "Common name is not set in the charm config,\
+                    cannot configure PKI secrets engine"
                 )
             )
             return
@@ -395,7 +397,9 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-kv request")
             return
-        relation = self.model.get_relation(relation_name=KV_RELATION_NAME, relation_id=event.relation_id)
+        relation = self.model.get_relation(
+            relation_name=KV_RELATION_NAME, relation_id=event.relation_id
+        )
         if not relation:
             logger.error("Relation not found for relation id %s", event.relation_id)
             return
@@ -480,7 +484,9 @@ class VaultOperatorCharm(CharmBase):
         )
         if not content_uploaded:
             event.fail(message="Failed to upload backup to S3 bucket.")
-            logger.error("Failed to run create-backup action - Failed to upload backup to S3 bucket.")
+            logger.error(
+                "Failed to run create-backup action - Failed to upload backup to S3 bucket."
+            )
             return
         logger.info("Backup uploaded to S3 bucket %s", s3_parameters["bucket"])
         event.set_results({"backup-id": backup_key})
@@ -640,7 +646,7 @@ class VaultOperatorCharm(CharmBase):
         if not self._is_relation_created(S3_RELATION_NAME):
             return "S3 relation not created"
         if missing_parameters:= self._get_missing_s3_parameters():
-            return "S3 parameters missing ({}):".format(", ".join(missing_parameters))
+            return "S3 parameters missing ({})".format(", ".join(missing_parameters))
         return None
 
     def _get_backup_key(self) -> str:
@@ -711,7 +717,9 @@ class VaultOperatorCharm(CharmBase):
         unit_name_dash = unit_name.replace("/", "-")
         policy_name = role_name = f"{mount}-{unit_name_dash}"
         vault.enable_secrets_engine(SecretsBackend.KV_V2, mount)
-        vault.configure_policy(policy_name=policy_name, policy_path="src/templates/kv_mount.hcl", mount=mount)
+        vault.configure_policy(
+            policy_name=policy_name, policy_path="src/templates/kv_mount.hcl", mount=mount
+        )
         role_id = vault.configure_approle(
             role_name=role_name,
             policies=[policy_name],
@@ -732,7 +740,9 @@ class VaultOperatorCharm(CharmBase):
         if nonce not in set(credential_nonces):
             self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
 
-    def _create_or_update_kv_secret(self, role_name: str, role_id: str, role_secret_id: str) -> Secret:
+    def _create_or_update_kv_secret(
+        self, role_name: str, role_id: str, role_secret_id: str
+    ) -> Secret:
         """Create or update the KV secret for the relation.
 
         Args:
@@ -770,7 +780,9 @@ class VaultOperatorCharm(CharmBase):
             return
         outstanding_kv_requests = self.vault_kv.get_outstanding_kv_requests()
         for kv_request in outstanding_kv_requests:
-            relation = self.model.get_relation(relation_name = KV_RELATION_NAME, relation_id=kv_request.relation_id)
+            relation = self.model.get_relation(
+                relation_name = KV_RELATION_NAME, relation_id=kv_request.relation_id
+            )
             if not relation:
                 logger.warning("Relation not found for relation id %s", kv_request.relation_id)
                 continue
@@ -863,7 +875,9 @@ class VaultOperatorCharm(CharmBase):
         common_name = self._get_config_common_name()
         vault.enable_secrets_engine(SecretsBackend.PKI, VAULT_PKI_MOUNT)
         if not self._is_intermediate_ca_set(vault, common_name):
-            csr = vault.generate_pki_intermediate_ca_csr(mount=VAULT_PKI_MOUNT, common_name=common_name)
+            csr = vault.generate_pki_intermediate_ca_csr(
+                mount=VAULT_PKI_MOUNT, common_name=common_name
+            )
             self.tls_certificates_pki.request_certificate_creation(
                 certificate_signing_request=csr.encode(),
                 is_ca=True,
@@ -904,7 +918,9 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("No certificate available")
             return
         if not vault.is_intermediate_ca_set(mount=VAULT_PKI_MOUNT, certificate=certificate):
-            vault.set_pki_intermediate_ca_certificate(certificate=certificate, mount=VAULT_PKI_MOUNT)
+            vault.set_pki_intermediate_ca_certificate(
+                certificate=certificate, mount=VAULT_PKI_MOUNT
+            )
         if not vault.is_pki_role_created(role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT):
             vault.create_pki_charm_role(
                 allowed_domains=common_name,
@@ -1034,7 +1050,7 @@ class VaultOperatorCharm(CharmBase):
         retry_joins = [
             {
                 "leader_api_addr": node_api_address,
-                "leader_ca_cert_file": f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",
+                "leader_ca_cert_file": f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",  # noqa: E501
             }
             for node_api_address in self._other_peer_node_api_addresses()
         ]
