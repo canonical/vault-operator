@@ -152,13 +152,7 @@ class VaultOperatorCharm(CharmBase):
         self.machine = Machine()
         self._cos_agent = COSAgentProvider(
             self,
-            scrape_configs=[
-                {
-                    "scheme": "https",
-                    "metrics_path": "/v1/sys/metrics",
-                    "static_configs": [{"targets": [f"*:{VAULT_PORT}"]}],
-                }
-            ],
+            scrape_configs=self._generate_vault_scrape_configs,
         )
         self.tls = VaultTLSManager(
             charm=self,
@@ -199,6 +193,19 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
 
+    def _generate_vault_scrape_configs(self):
+        """Generate the scrape configs for the COS agent."""
+        return [
+                {
+                    "scheme": "https",
+                    "tls_config": {
+                        "insecure_skip_verify": False,
+                        "ca": self.tls.pull_tls_file_from_workload(File.CA),
+                    },
+                    "metrics_path": "/v1/sys/metrics",
+                    "static_configs": [{"targets": [self._api_address]}],
+                }
+            ]
     @contextmanager
     def temp_maintenance_status(self, message: str):
         """Context manager to set the charm status temporarily.
