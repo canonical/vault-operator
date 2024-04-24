@@ -215,7 +215,9 @@ class TestCharm(unittest.TestCase):
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
 
         self.harness.charm.on.install.emit()
 
@@ -233,7 +235,9 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader(is_leader=True)
         self.harness.add_storage(storage_name="certs", attach=True)
         expected_content_hcl = hcl.loads(read_file("tests/unit/config.hcl"))
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self._set_peer_relation()
         self._set_ca_certificate_secret(
             certificate="whatever certificate",
@@ -264,10 +268,12 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_not_leader_and_peer_addresses_unavailable_when_collectstatus_then_status_is_waiting(
+    def test_given_unit_not_leader_and_peer_addresses_unavailable_when_collectstatus_then_status_is_waiting(  # noqa: E501
         self, patch_get_binding
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.mock_vault_tls_manager.tls_file_available_in_charm.return_value = False
         self.harness.set_leader(is_leader=False)
         self._set_peer_relation()
@@ -280,12 +286,14 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_blocked(
+    def test_given_unit_is_leader_and_ca_certificate_saved_when_collectstatus_then_status_is_blocked(  # noqa: E501
         self,
         patch_get_binding,
     ):
         self.mock_machine.exists.return_value = False
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.harness.set_leader(is_leader=False)
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
@@ -310,7 +318,9 @@ class TestCharm(unittest.TestCase):
         self,
         patch_get_binding,
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -343,7 +353,9 @@ class TestCharm(unittest.TestCase):
         patch_get_binding,
     ):
         bind_address = "1.2.1.2"
-        patch_get_binding.return_value = MockBinding(bind_address=bind_address, ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address=bind_address, ingress_address="2.3.2.3"
+        )
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -371,7 +383,9 @@ class TestCharm(unittest.TestCase):
         self,
         patch_get_binding,
     ):
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -397,13 +411,15 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    def test_given_unit_not_leader_and_peer_addresses_available_and_vault_unsealed_when_collectstatus_then_status_is_active(
+    def test_given_unit_not_leader_and_peer_addresses_available_and_vault_unsealed_when_collectstatus_then_status_is_active(  # noqa: E501
         self,
         patch_get_binding,
     ):
         self.mock_vault.configure_mock(**{"is_sealed.return_value": False})
 
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.harness.set_leader(is_leader=False)
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
@@ -433,7 +449,9 @@ class TestCharm(unittest.TestCase):
         mock_get_binding: MagicMock,
     ):
         self.mock_machine.exists.return_value = False
-        mock_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        mock_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         peer_relation_id = self._set_peer_relation()
         other_unit_name = f"{self.harness.charm.app.name}/1"
         self.harness.add_relation_unit(
@@ -478,13 +496,15 @@ class TestCharm(unittest.TestCase):
     @patch("charm.get_common_name_from_certificate", new=Mock)
     @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation")
     @patch("ops.model.Model.get_binding")
-    def test_given_vault_is_available_when_tls_certificates_pki_relation_joined_then_certificate_request_is_made(
+    def test_given_vault_is_available_when_tls_certificates_pki_relation_joined_then_certificate_request_is_made(  # noqa: E501
         self,
         patch_get_binding,
         patch_request_certificate_creation,
     ):
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         csr = "some csr content"
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
@@ -518,13 +538,15 @@ class TestCharm(unittest.TestCase):
 
     @patch("ops.model.Model.get_binding")
     @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
-    def test_given_vault_is_available_when_pki_certificate_is_available_then_certificate_added_to_vault_pki(
+    def test_given_vault_is_available_when_pki_certificate_is_available_then_certificate_added_to_vault_pki(  # noqa: E501
         self,
         patch_get_assigned_certificates,
         patch_get_binding,
     ):
         peer_relation_id = self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
@@ -583,7 +605,7 @@ class TestCharm(unittest.TestCase):
     @patch("ops.model.Model.get_binding")
     @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesProvidesV3.set_relation_certificate")
     @patch("charm.get_common_name_from_csr")
-    def test_given_vault_available_when_vault_pki_certificate_creation_request_then_certificate_is_provided(
+    def test_given_vault_available_when_vault_pki_certificate_creation_request_then_certificate_is_provided(  # noqa: E501
         self,
         patch_get_common_name_from_csr,
         patch_set_relation_certificate,
@@ -591,7 +613,9 @@ class TestCharm(unittest.TestCase):
     ):
         self._set_peer_relation()
 
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
@@ -648,7 +672,7 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("ops.model.Model.get_binding")
-    def test_given_prerequisites_are_met_when_new_vault_kv_client_attached_then_kv_mount_is_configured(
+    def test_given_prerequisites_are_met_when_new_vault_kv_client_attached_then_kv_mount_is_configured(  # noqa: E501
         self,
         patch_get_binding,
     ):
@@ -664,7 +688,9 @@ class TestCharm(unittest.TestCase):
             },
         )
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.1.2", ingress_address="2.3.2.3")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
@@ -736,7 +762,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             e.exception.message,
-            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint):."
+            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint)."  # noqa: E501
         )
 
 
@@ -892,7 +918,9 @@ class TestCharm(unittest.TestCase):
                 "return_value.upload_content.return_value": False
             }
         )
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.3.4", ingress_address="2.2.2.2")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.3.4", ingress_address="2.2.2.2"
+        )
 
         self._set_peer_relation()
         self._set_ca_certificate_secret(
@@ -939,7 +967,9 @@ class TestCharm(unittest.TestCase):
                 "return_value.upload_content.return_value": True
             }
         )
-        patch_get_binding.return_value = MockBinding(bind_address="1.1.1.1", ingress_address="2.2.2.2")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.1.1.1", ingress_address="2.2.2.2"
+        )
 
         self._set_peer_relation()
         self._set_ca_certificate_secret(
@@ -980,7 +1010,10 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
-    def test_given_missing_s3_parameters_when_list_backups_action_then_action_fails(self, patch_get_s3_connection_info):
+    def test_given_missing_s3_parameters_when_list_backups_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info,
+    ):
         patch_get_s3_connection_info.return_value = {}
         self.harness.set_leader(is_leader=True)
         self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
@@ -990,12 +1023,15 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             e.exception.message,
-            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint):."
+            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint)."  # noqa: E501
         )
 
     @patch("charm.S3")
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
-    def test_given_s3_session_not_created_when_list_backups_action_then_action_fails(self, patch_get_s3_connection_info, patch_s3):
+    def test_given_s3_session_not_created_when_list_backups_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info, patch_s3,
+    ):
         patch_s3.side_effect = S3Error("Failed to create S3 session.")
         patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
         self.harness.set_leader(is_leader=True)
@@ -1011,7 +1047,11 @@ class TestCharm(unittest.TestCase):
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_s3_list_objects_fails_when_list_backups_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info):
+    def test_given_s3_list_objects_fails_when_list_backups_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+        ):
         patch_s3.configure_mock(
             spec=S3,
             **{
@@ -1032,7 +1072,10 @@ class TestCharm(unittest.TestCase):
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_s3_list_objects_succeeds_when_list_backups_action_then_action_succeeds(self, patch_s3, patch_get_s3_connection_info):
+    def test_given_s3_list_objects_succeeds_when_list_backups_action_then_action_succeeds(
+        self,
+        patch_s3, patch_get_s3_connection_info,
+    ):
         patch_s3.configure_mock(
             spec=S3,
             **{
@@ -1076,7 +1119,10 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
-    def test_given_missing_s3_parameters_when_restore_backup_action_then_action_fails(self, patch_get_s3_connection_info):
+    def test_given_missing_s3_parameters_when_restore_backup_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info,
+    ):
         patch_get_s3_connection_info.return_value = {}
         self.harness.set_leader(is_leader=True)
         self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
@@ -1086,12 +1132,15 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             e.exception.message,
-            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint):."
+            "S3 pre-requisites not met. S3 parameters missing (bucket, access-key, secret-key, endpoint)."  # noqa: E501
         )
 
     @patch("charm.S3")
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
-    def test_given_s3_session_not_created_when_restore_backup_action_then_action_fails(self, patch_get_s3_connection_info, patch_s3):
+    def test_given_s3_session_not_created_when_restore_backup_action_then_action_fails(
+        self,
+        patch_get_s3_connection_info, patch_s3,
+    ):
         patch_s3.side_effect = S3Error("Failed to create S3 session.")
         patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
         self.harness.set_leader(is_leader=True)
@@ -1107,11 +1156,17 @@ class TestCharm(unittest.TestCase):
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_s3_error_when_restore_backup_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info):
+    def test_given_s3_error_when_restore_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
         patch_s3.configure_mock(
             spec=S3,
             **{
-                "return_value.get_content.side_effect": S3Error("Failed to retrieve snapshot from S3 storage.")
+                "return_value.get_content.side_effect": S3Error(
+                    "Failed to retrieve snapshot from S3 storage."
+                )
             }
         )
         patch_get_s3_connection_info.return_value = self.get_valid_s3_params()
@@ -1128,7 +1183,11 @@ class TestCharm(unittest.TestCase):
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_no_returned_snapshot_from_s3_when_restore_backup_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info):
+    def test_given_no_returned_snapshot_from_s3_when_restore_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
         patch_s3.configure_mock(
             spec=S3,
             **{
@@ -1149,7 +1208,11 @@ class TestCharm(unittest.TestCase):
 
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_vault_api_not_available_when_restore_backup_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info):
+    def test_given_vault_api_not_available_when_restore_backup_action_then_action_fails(
+        self,
+        patch_s3,
+        patch_get_s3_connection_info,
+    ):
         self.mock_vault.configure_mock(
             spec=Vault,
             **{
@@ -1178,13 +1241,17 @@ class TestCharm(unittest.TestCase):
     @patch("ops.model.Model.get_binding")
     @patch(f"{S3_LIB_PATH}.S3Requirer.get_s3_connection_info")
     @patch("charm.S3")
-    def test_given_vault_client_error_when_restore_backup_action_then_action_fails(self, patch_s3, patch_get_s3_connection_info, patch_get_binding):
+    def test_given_vault_client_error_when_restore_backup_action_then_action_fails(
+        self, patch_s3, patch_get_s3_connection_info, patch_get_binding
+    ):
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
         )
         self._set_peer_relation()
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.3.4", ingress_address="2.2.2.2")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.3.4", ingress_address="2.2.2.2"
+        )
         self.mock_vault.configure_mock(
             spec=Vault,
             **{
@@ -1214,13 +1281,18 @@ class TestCharm(unittest.TestCase):
 
     # Test remove
     @patch("ops.model.Model.get_binding")
-    def test_given_vault_unsealed_when_on_remove_then_node_removed_from_raft_cluster(self, patch_get_binding):
+    def test_given_vault_unsealed_when_on_remove_then_node_removed_from_raft_cluster(
+        self,
+        patch_get_binding,
+    ):
         self._set_peer_relation()
         self.harness.charm.app.add_secret(
             {"role-id": "role-id", "secret-id": "secret-id"},
             label=VAULT_CHARM_APPROLE_SECRET_LABEL,
         )
-        patch_get_binding.return_value = MockBinding(bind_address="1.2.3.4", ingress_address="2.2.2.2")
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.3.4", ingress_address="2.2.2.2"
+        )
         self.mock_vault.configure_mock(
             spec=Vault,
             **{
@@ -1242,4 +1314,40 @@ class TestCharm(unittest.TestCase):
             call(path=f"{VAULT_STORAGE_PATH}/vault.db"),
             call(path=f"{VAULT_STORAGE_PATH}/raft/raft.db"),
         ]
+        )
+
+    @patch("ops.model.Model.get_binding")
+    def test_given_ca_certificate_and_bind_address_are_available_when_generate_vault_scrape_configs_then_config_is_generated(  # noqa: E501
+        self,
+        patch_get_binding,
+    ):
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+        self.mock_vault_tls_manager.pull_tls_file_from_workload.return_value = "whatever ca cert"
+        self._set_peer_relation()
+        actual_config = self.harness.charm.generate_vault_scrape_configs()
+        expected_config = [
+            {
+                "scheme": "https",
+                "tls_config": {
+                    "insecure_skip_verify": False,
+                    "ca": "whatever ca cert",
+                },
+                "metrics_path": "/v1/sys/metrics",
+                "static_configs": [{"targets": ["1.2.1.2:8200"]}],
+            }
+        ]
+        self.assertEqual(
+            actual_config,
+            expected_config,
+        )
+
+    def test_given_bind_address_not_available_when_generate_vault_scrape_configs_then_config_is_empty(  # noqa: E501
+        self
+    ):
+        actual_config = self.harness.charm.generate_vault_scrape_configs()
+        self.assertEqual(
+            actual_config,
+            [],
         )
