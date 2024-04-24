@@ -336,7 +336,7 @@ async def test_given_charm_build_when_deploy_then_status_blocked(
 
 
 @pytest.mark.abort_on_fail
-async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(
+async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(  # noqa: E501
     ops_test: OpsTest, deploy_requiring_charms: None
 ):
     """To test that Vault is actually running when the charm is active."""
@@ -374,10 +374,10 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
     assert not vault.is_initialized()
 
 @pytest.mark.abort_on_fail
-async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_authorized_then_status_is_active(
+async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_authorized_then_status_is_active(  # noqa: E501
     ops_test: OpsTest, deploy_requiring_charms: None, initialize_vault: Tuple[str, str]
 ):
-    """Test that Vault is active and running correctly after Vault is initialized, unsealed and authorized."""
+    """Test that Vault is active and running correctly after Vault is initialized, unsealed and authorized."""  # noqa: E501
     assert ops_test.model
     root_token, unseal_key = initialize_vault
     leader_unit_address = await get_leader_unit_address(ops_test)
@@ -387,7 +387,11 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     ca_file_location = str(ops_test.tmp_path / "ca_file.txt")
     with open(ca_file_location, mode="w+") as ca_file:
         ca_file.write(ca_certificate)
-    vault = Vault(url=f"https://{leader_unit_address}:8200", ca_file_location=ca_file_location, token=root_token)
+    vault = Vault(
+        url=f"https://{leader_unit_address}:8200",
+        ca_file_location=ca_file_location,
+        token=root_token,
+    )
     assert vault.is_sealed()
     vault.unseal(unseal_key)
     vault.wait_for_node_to_be_unsealed()
@@ -445,7 +449,11 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
     assert isinstance(app, Application)
     new_unit = app.units[-1]
     new_unit_address = new_unit.public_address
-    vault = Vault(url=f"https://{new_unit_address}:8200", ca_file_location=ca_file_location, token=root_token)
+    vault = Vault(
+        url=f"https://{new_unit_address}:8200",
+        ca_file_location=ca_file_location,
+        token=root_token,
+    )
     vault.unseal(unseal_key=unseal_key)
     vault.wait_for_node_to_be_unsealed()
     async with ops_test.fast_forward(fast_interval="10s"):
@@ -501,7 +509,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
         )
 
 @pytest.mark.abort_on_fail
-async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_then_status_is_active(
+async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_then_status_is_active(  # noqa: E501
     ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model

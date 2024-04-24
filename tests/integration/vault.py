@@ -96,8 +96,12 @@ class Vault:
                 logger.info(f"Nodes in the raft cluster: {current_num_nodes}/{expected_num_nodes}")
                 continue
             if current_num_voters != expected_num_nodes:
-                logger.info(f"Voters in the raft cluster: {current_num_voters}/{expected_num_nodes}")
+                logger.info(
+                    f"Voters in the raft cluster: {current_num_voters}/{expected_num_nodes}"
+                )
                 continue
-            logger.info(f"Expected number of nodes are part of the raft cluster: {current_num_nodes}/{expected_num_nodes}")
+            logger.info(
+                f"Expected number of nodes are part of the raft cluster: {current_num_nodes}/{expected_num_nodes}"  # noqa: E501
+            )
             return
         raise TimeoutError("Timed out waiting for nodes to be part of the raft cluster.")
