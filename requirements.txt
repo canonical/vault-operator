@@ -4,13 +4,15 @@
 #
 #    pip-compile requirements.in
 #
+annotated-types==0.6.0
+    # via pydantic
 attrs==23.2.0
     # via
     #   jsonschema
     #   referencing
 boto3==1.34.92
     # via -r requirements.in
-boto3-stubs[s3]==1.34.91
+boto3-stubs[s3]==1.34.92
     # via -r requirements.in
 botocore==1.34.92
     # via
@@ -67,10 +69,12 @@ psutil==5.9.8
     # via -r requirements.in
 pycparser==2.22
     # via cffi
-pydantic==1.10.15
+pydantic==2.7.1
     # via
     #   -r requirements.in
     #   pytest-interface-tester
+pydantic-core==2.18.2
+    # via pydantic
 pyhcl==0.4.5
     # via -r requirements.in
 pyopenssl==24.1.0
@@ -112,6 +116,7 @@ typing-extensions==4.10.0
     #   cosl
     #   mypy-boto3-s3
     #   pydantic
+    #   pydantic-core
 urllib3==2.2.1
     # via
     #   botocore
