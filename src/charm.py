@@ -257,6 +257,7 @@ class VaultOperatorCharm(CharmBase):
             )
             vault_secret_id = vault.generate_role_secret_id(name="charm")
             self._create_approle_secret(role_id, vault_secret_id)
+            event.set_results({"result": "Charm authorized successfully."})
         except VaultClientError as e:
             logger.exception("Vault returned an error while authorizing the charm")
             event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")

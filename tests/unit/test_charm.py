@@ -470,7 +470,7 @@ class TestCharm(unittest.TestCase):
             },
         )
 
-        self.harness.run_action("authorize-charm", {"token": "test-token"})
+        action_result = self.harness.run_action("authorize-charm", {"token": "test-token"}).results
 
         # Assertions
         self.mock_vault.authenticate.assert_called_once_with(Token("test-token"))
@@ -492,6 +492,7 @@ class TestCharm(unittest.TestCase):
 
         assert secret_content["role-id"] == "approle_id"
         assert secret_content["secret-id"] == "secret_id"
+        assert action_result["result"] == "Charm authorized successfully."
 
     @patch("charm.get_common_name_from_certificate", new=Mock)
     @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation")
