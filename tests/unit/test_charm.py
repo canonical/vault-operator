@@ -3,6 +3,7 @@
 
 import json
 import unittest
+from datetime import datetime, timezone
 from typing import Mapping
 from unittest.mock import MagicMock, Mock, call, patch
 
@@ -590,6 +591,7 @@ class TestCharm(unittest.TestCase):
                 ca=ca,
                 chain=chain,
                 revoked=False,
+                expiry_time=datetime.now(timezone.utc),
             )
         ]
 
