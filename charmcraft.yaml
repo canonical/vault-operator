@@ -20,8 +20,7 @@ links:
     - https://github.com/canonical/vault-operator
   issues:
     - https://github.com/canonical/vault-operator/issues
-  documentation:
-    - https://discourse.charmhub.io/t/vault-operator-machine/12983
+  documentation: https://discourse.charmhub.io/t/vault-operator-machine/12983
 
 assumes:
   - juju >= 3.1
