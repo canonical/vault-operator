@@ -19,7 +19,7 @@ from tests.integration.helpers import get_leader_unit
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
