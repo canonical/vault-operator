@@ -1,5 +1,70 @@
-# This file configures Charmcraft.
-# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+# Copyright 2024 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: vault
+
+summary: A tool for managing secrets
+description: |
+  Vault secures, stores, and tightly controls access to
+  tokens, passwords, certificates, API keys, and other
+  secrets in modern computing. Vault handles leasing, key
+  revocation, key rolling, and auditing. Through a unified
+  API, users can access an encrypted Key/Value store and
+  network encryption-as-a-service, or generate AWS IAM/STS
+  credentials, SQL/NoSQL databases, X.509 certificates,
+  SSH credentials, and more.
+links:
+  website:
+    - https://charmhub.io/vault
+  source:
+    - https://github.com/canonical/vault-operator
+  issues:
+    - https://github.com/canonical/vault-operator/issues
+  documentation: https://discourse.charmhub.io/t/vault-operator-machine/12983
+
+assumes:
+  - juju >= 3.1
+
+storage:
+  vault:
+    type: filesystem
+    location: /var/snap/vault/common
+  certs:
+    type: filesystem
+    minimum-size: 5M
+    location: /var/snap/vault/common/certs
+
+peers:
+  vault-peers:
+    interface: vault-peer
+
+provides:
+  vault-kv:
+    interface: vault-kv
+  vault-pki:
+    interface: tls-certificates
+  cos-agent:
+    interface: cos_agent
+  send-ca-cert:
+    interface: certificate_transfer
+    description: |
+      Send our CA certificate so clients can trust the CA by means of forming a relation.
+
+requires:
+  tls-certificates-access:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Communication between the vault units and from a client to Vault should 
+      be done using the certificates provided by this integration.
+  tls-certificates-pki:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Interface to be used to provide Vault with its CA certificate. Vault will
+      use this certificate to sign the certificates it issues on the `vault-pki` interface.
+  s3-parameters:
+    interface: s3
 
 type: charm
 bases:
@@ -20,3 +85,54 @@ parts:
       - rustc
       - cargo
       - pkg-config
+
+config:
+  options:
+    default_lease_ttl:
+      type: string
+      default: "168h"
+      description: Specifies the default lease duration for Vault's tokens and secrets.
+    max_lease_ttl:
+      type: string
+      default: "720h"
+      description: Specifies the maximum possible lease duration for Vault's tokens and secrets.
+    common_name:
+      type: string
+      description: |
+        The common name that will be used by Vault as an intermediate CA. This will only be used when the charm is 
+        configured to use a Vault PKI backend through the `vault-pki` relation.
+
+actions:
+  authorize-charm:
+    description: >-
+      Authorizes the charm to be able to interact with Vault to manage its
+      operations. A token is required for Vault to use to create the app role and
+      the policy the charm will use to interact with Vault.
+    params:
+      token:
+        type: string
+        description: >-
+          A token for Vault that can create new policies, such as the root token
+          that is provided upon initializing Vault. Used to create the app role
+          and policy for the charm. It is not stored by the charm.
+    required: [token]
+
+  create-backup:
+    description: >-
+      Creates a snapshot of the Raft backend and saves it to the S3 storage.
+      Returns backup ID.
+
+  list-backups:
+    description: >-
+      Lists all available backups.
+
+  restore-backup:
+    description: >-
+      Restores a backup from the S3 storage to the Raft backend.
+      Returns backup ID.
+    params:
+      backup-id:
+        type: string
+        description: >-
+          Backup ID to restore.
+    required: [backup-id]
