@@ -156,6 +156,7 @@ class VaultOperatorCharm(CharmBase):
                 self.on[PEER_RELATION_NAME].relation_changed,
             ],
             scrape_configs=self.generate_vault_scrape_configs,
+            dashboard_dirs=["./src/grafana_dashboards"],
         )
         self.tls = VaultTLSManager(
             charm=self,
