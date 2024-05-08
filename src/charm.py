@@ -986,7 +986,24 @@ class VaultOperatorCharm(CharmBase):
 
     def _get_config_common_name(self) -> str:
         """Return the common name to use for the PKI backend."""
-        return self.config.get("common_name", "")
+        common_name = self.config.get("common_name")
+        if not common_name or not isinstance(common_name, str):
+            return ""
+        return common_name
+
+    def _get_default_lease_ttl(self) -> str:
+        """Return the default lease ttl config."""
+        default_lease_ttl = self.config.get("default_lease_ttl")
+        if not default_lease_ttl or not isinstance(default_lease_ttl, str):
+            raise ValueError("Invalid config default_lease_ttl")
+        return default_lease_ttl
+
+    def _get_max_lease_ttl(self) -> str:
+        """Return the max lease ttl config."""
+        max_lease_ttl = self.config.get("max_lease_ttl")
+        if not max_lease_ttl or not isinstance(max_lease_ttl, str):
+            raise ValueError("Invalid config max_lease_ttl")
+        return max_lease_ttl
 
     def _common_name_config_is_valid(self) -> bool:
         """Return whether the config value for the common name is valid."""
@@ -1066,8 +1083,8 @@ class VaultOperatorCharm(CharmBase):
             for node_api_address in self._other_peer_node_api_addresses()
         ]
         content = render_vault_config_file(
-            default_lease_ttl=self.model.config["default_lease_ttl"],
-            max_lease_ttl=self.model.config["max_lease_ttl"],
+            default_lease_ttl=self._get_default_lease_ttl(),
+            max_lease_ttl=self._get_max_lease_ttl(),
             cluster_address=self._cluster_address,
             api_address=self._api_address,
             tls_cert_file=f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CERT.name.lower()}.pem",
