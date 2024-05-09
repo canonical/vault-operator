@@ -71,6 +71,8 @@ VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 VAULT_PKI_MOUNT = "charm-pki"
 VAULT_PKI_ROLE = "charm-pki"
 BACKUP_KEY_PREFIX = "vault-backup"
+LOGS_ALERT_RULES_PATH = "./src/loki_alert_rules"
+METRICS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
 
 
 def render_vault_config_file(
@@ -157,6 +159,8 @@ class VaultOperatorCharm(CharmBase):
             ],
             scrape_configs=self.generate_vault_scrape_configs,
             dashboard_dirs=["./src/grafana_dashboards"],
+            logs_rules_dir=LOGS_ALERT_RULES_PATH,
+            metrics_rules_dir=METRICS_ALERT_RULES_PATH
         )
         self.tls = VaultTLSManager(
             charm=self,
