@@ -335,14 +335,14 @@ class VaultOperatorCharm(CharmBase):
             event.add_status(WaitingStatus("Vault API is not yet available"))
             return
         if not vault.is_initialized():
-            event.add_status(BlockedStatus("Waiting for Vault to be initialized"))
+            event.add_status(BlockedStatus("Please initialize Vault"))
             return
         if vault.is_sealed():
-            event.add_status(BlockedStatus("Waiting for Vault to be unsealed"))
+            event.add_status(BlockedStatus("Please unseal Vault"))
             return
         if not self._get_vault_approle_secret():
             event.add_status(
-                BlockedStatus("Waiting for charm to be authorized (see `authorize-charm` action)")
+                BlockedStatus("Please authorize charm (see `authorize-charm` action)")
             )
             return
         event.add_status(ActiveStatus())
