@@ -310,7 +310,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             self.harness.charm.unit.status,
-            ops.BlockedStatus("Waiting for Vault to be unsealed"),
+            ops.BlockedStatus("Please unseal Vault"),
         )
 
     @patch("charm.config_file_content_matches", new=Mock())
