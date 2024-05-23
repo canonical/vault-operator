@@ -746,6 +746,7 @@ class VaultOperatorCharm(CharmBase):
         self.vault_kv.set_mount(relation, mount)
         self.vault_kv.set_ca_certificate(relation, ca_certificate)
         self.vault_kv.set_vault_url(relation, vault_url)
+        self.vault_kv.set_egress_subnet(relation, egress_subnet)
         self.vault_kv.set_unit_credentials(relation, nonce, secret)
         credential_nonces = self.vault_kv.get_credentials(relation).keys()
         if nonce not in set(credential_nonces):
