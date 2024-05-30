@@ -1,7 +1,0 @@
-alert: ErrorLevelLogsFound
-expr: rate({%%juju_topology%%} |= "vaultd" |= "[ERROR]"[1m]) >0
-for: 1m
-labels:
-  severity: critical
-annotations:
-  summary: Vault error level logs found.
