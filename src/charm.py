@@ -888,7 +888,7 @@ class VaultOperatorCharm(CharmBase):
             return
         common_name = self._get_config_common_name()
         vault.enable_secrets_engine(SecretsBackend.PKI, VAULT_PKI_MOUNT)
-        if not self._is_intermediate_ca_set(vault, common_name):
+        if not self._is_intermediate_ca_common_name_valid(vault, common_name):
             csr = vault.generate_pki_intermediate_ca_csr(
                 mount=VAULT_PKI_MOUNT, common_name=common_name
             )
@@ -898,13 +898,18 @@ class VaultOperatorCharm(CharmBase):
             )
             self._set_pki_csr_secret(csr)
 
-    def _is_intermediate_ca_set(self, vault: Vault, common_name: str) -> bool:
-        """Check if the intermediate CA is set in the PKI secrets engine."""
+    def _is_intermediate_ca_common_name_valid(self, vault: Vault, common_name: str) -> bool:
+        """Check if the intermediate CA is set with the valid common name."""
         intermediate_ca = vault.get_intermediate_ca(mount=VAULT_PKI_MOUNT)
         if not intermediate_ca:
             return False
         intermediate_ca_common_name = get_common_name_from_certificate(intermediate_ca)
         return intermediate_ca_common_name == common_name
+
+    def _is_intermediate_ca_set(self, vault: Vault, certificate: str) -> bool:
+        """Check if the intermediate CA is set in the PKI secrets engine."""
+        intermediate_ca = vault.get_intermediate_ca(mount=VAULT_PKI_MOUNT)
+        return certificate == intermediate_ca
 
     def _add_intermediate_ca_certificate_to_pki_secrets_engine(self) -> None:
         """Add the CA certificate to the PKI secrets engine."""
@@ -931,12 +936,15 @@ class VaultOperatorCharm(CharmBase):
         if not certificate:
             logger.debug("No certificate available")
             return
-        if not vault.is_intermediate_ca_set(mount=VAULT_PKI_MOUNT, certificate=certificate):
+        if (not self._is_intermediate_ca_common_name_valid(vault, common_name) or
+            not self._is_intermediate_ca_set(vault, certificate)):
             vault.set_pki_intermediate_ca_certificate(
                 certificate=certificate, mount=VAULT_PKI_MOUNT
             )
-        if not vault.is_pki_role_created(role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT):
-            vault.create_pki_charm_role(
+        if not vault.is_common_name_allowed_in_pki_role(
+            role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT, common_name=common_name
+        ):
+            vault.create_or_update_pki_charm_role(
                 allowed_domains=common_name,
                 mount=VAULT_PKI_MOUNT,
                 role=VAULT_PKI_ROLE,
