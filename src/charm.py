@@ -949,6 +949,11 @@ class VaultOperatorCharm(CharmBase):
                 mount=VAULT_PKI_MOUNT,
                 role=VAULT_PKI_ROLE,
             )
+        # Can run only after the first issuer has been actually created.
+        try:
+            vault.make_latest_pki_issuer_default(mount=VAULT_PKI_MOUNT)
+        except VaultClientError as e:
+            logger.error("Failed to make latest issuer default: %s", e)
 
     def _get_pki_intermediate_ca_certificate(self) -> Optional[str]:
         """Return the PKI CA certificate provided by the TLS provider.

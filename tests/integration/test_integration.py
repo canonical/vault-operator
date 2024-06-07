@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import pytest
 import yaml
+from cryptography import x509
 from juju.application import Application
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
@@ -98,7 +99,6 @@ async def deploy_vault(ops_test: OpsTest, request) -> None:
         charm_path,
         application_name=APP_NAME,
         num_units=NUM_VAULT_UNITS,
-        config={"common_name": "example.com"},
     )
 
 
@@ -183,6 +183,36 @@ async def unseal_all_vault_units(ops_test: OpsTest, ca_file_name: str, unseal_ke
         vault = Vault(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
         vault.unseal(unseal_key)
         vault.wait_for_node_to_be_unsealed()
+
+
+def get_vault_pki_intermediate_ca_common_name(
+    root_token: str, unit_address: str, mount: str
+) -> str:
+    vault = Vault(
+        url=f"https://{unit_address}:8200",
+        token=root_token,
+    )
+    ca_cert = vault.client.secrets.pki.read_ca_certificate(mount_point=mount)
+    loaded_certificate = x509.load_pem_x509_certificate(ca_cert.encode("utf-8"))
+    return str(
+        loaded_certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value  # type: ignore[reportAttributeAccessIssue]
+    )
+
+
+def wait_for_vault_pki_issuer_config_update(
+    root_token: str, unit_address: str, mount: str, expected_common_name: str
+) -> str:
+    start_time = time.time()
+    timeout = 300
+    while time.time() - start_time < timeout:
+        current_common_name = get_vault_pki_intermediate_ca_common_name(
+            root_token, unit_address, mount
+        )
+        if current_common_name == expected_common_name:
+            return current_common_name
+        time.sleep(10)
+    raise TimeoutError("Timed out waiting issuer config to update in Vault.")
+
 
 async def run_s3_integrator_sync_credentials_action(
     ops_test: OpsTest, access_key: str, secret_key: str
@@ -559,6 +589,13 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
     ops_test: OpsTest, deploy_requiring_charms: None
 ):
     assert ops_test.model
+    vault_app = ops_test.model.applications[APP_NAME]
+    assert vault_app
+    common_name = "unmatching-the-requirer.com"
+    common_name_config = {
+        "common_name": common_name,
+    }
+    await vault_app.set_config(common_name_config)
     await ops_test.model.integrate(
         relation1=f"{APP_NAME}:tls-certificates-pki",
         relation2=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
@@ -569,9 +606,10 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
         timeout=1000,
     )
 
+
 @pytest.mark.abort_on_fail
-async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
-    ops_test: OpsTest, deploy_requiring_charms: None
+async def test_given_vault_pki_relation_and_unmatching_common_name_when_integrate_then_cert_not_provided(  # noqa: E501
+    ops_test: OpsTest, deploy_requiring_charms: None, initialize_vault: Tuple[str, str]
 ):
     assert ops_test.model
     await ops_test.model.integrate(
@@ -583,11 +621,51 @@ async def test_given_vault_pki_relation_when_integrate_then_cert_is_provided(
             status="active",
             timeout=1000,
         )
+    action_output = await run_get_certificate_action(ops_test)
+    assert action_output.get("certificate") is None
+    root_token, _ = initialize_vault
+    leader_unit_address = await get_leader_unit_address(ops_test)
+    assert leader_unit_address
+    current_issuers_common_name = get_vault_pki_intermediate_ca_common_name(
+        root_token=root_token,
+        unit_address=leader_unit_address,
+        mount="charm-pki",
+    )
+    assert current_issuers_common_name == "unmatching-the-requirer.com"
+
+
+@pytest.mark.abort_on_fail
+async def test_given_vault_pki_relation_and_matching_common_name_configured_when_integrate_then_cert_is_provided(  # noqa: E501
+    ops_test: OpsTest, deploy_requiring_charms: None, initialize_vault: Tuple[str, str]
+):
+    assert ops_test.model
+    vault_app = ops_test.model.applications[APP_NAME]
+    assert vault_app
+    common_name = "example.com"
+    common_name_config = {
+        "common_name": common_name,
+    }
+    await vault_app.set_config(common_name_config)
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME, VAULT_PKI_REQUIRER_APPLICATION_NAME],
+        status="active",
+        timeout=1000,
+    )
+    root_token, _ = initialize_vault
+    leader_unit_address = await get_leader_unit_address(ops_test)
+    assert leader_unit_address
+    current_issuers_common_name = wait_for_vault_pki_issuer_config_update(
+        root_token=root_token,
+        unit_address=leader_unit_address,
+        mount="charm-pki",
+        expected_common_name=common_name,
+    )
     await wait_for_certificate_to_be_provided(ops_test)
     action_output = await run_get_certificate_action(ops_test)
     assert action_output.get("certificate", None) is not None
     assert action_output.get("ca-certificate", None) is not None
     assert action_output.get("csr", None) is not None
+    assert current_issuers_common_name == common_name
 
 @pytest.mark.abort_on_fail
 async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fails(
