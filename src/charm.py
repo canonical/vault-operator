@@ -45,33 +45,33 @@ from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, Wai
 
 logger = logging.getLogger(__name__)
 
+BACKUP_KEY_PREFIX = "vault-backup"
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
+KV_RELATION_NAME = "vault-kv"
+KV_SECRET_PREFIX = "kv-creds-"
 MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/vault/common/certs"
+METRICS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
 PEER_RELATION_NAME = "vault-peers"
 PKI_RELATION_NAME = "vault-pki"
-KV_RELATION_NAME = "vault-kv"
-S3_RELATION_NAME = "s3-parameters"
 REQUIRED_S3_PARAMETERS = ["bucket", "access-key", "secret-key", "endpoint"]
+S3_RELATION_NAME = "s3-parameters"
 TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
-KV_SECRET_PREFIX = "kv-creds-"
 VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
-VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
 VAULT_CHARM_POLICY_NAME = "charm-access"
 VAULT_CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
 VAULT_CLUSTER_PORT = 8201
 VAULT_CONFIG_FILE_NAME = "vault.hcl"
 VAULT_CONFIG_PATH = "/var/snap/vault/common"
 VAULT_DEFAULT_POLICY_NAME = "default"
+VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
+VAULT_PKI_MOUNT = "charm-pki"
+VAULT_PKI_ROLE = "charm-pki"
 VAULT_PORT = 8200
 VAULT_SNAP_CHANNEL = "1.15/stable"
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2226"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-VAULT_PKI_MOUNT = "charm-pki"
-VAULT_PKI_ROLE = "charm-pki"
-BACKUP_KEY_PREFIX = "vault-backup"
-METRICS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
 
 
 def render_vault_config_file(
@@ -158,7 +158,7 @@ class VaultOperatorCharm(CharmBase):
             ],
             scrape_configs=self.generate_vault_scrape_configs,
             dashboard_dirs=["./src/grafana_dashboards"],
-            metrics_rules_dir=METRICS_ALERT_RULES_PATH
+            metrics_rules_dir=METRICS_ALERT_RULES_PATH,
         )
         self.tls = VaultTLSManager(
             charm=self,
@@ -208,16 +208,17 @@ class VaultOperatorCharm(CharmBase):
         if not self._is_peer_relation_created():
             return []
         return [
-                {
-                    "scheme": "https",
-                    "tls_config": {
-                        "insecure_skip_verify": False,
-                        "ca": self.tls.pull_tls_file_from_workload(File.CA),
-                    },
-                    "metrics_path": "/v1/sys/metrics",
-                    "static_configs": [{"targets": [f"{self._bind_address}:{VAULT_PORT}"]}],
-                }
-            ]
+            {
+                "scheme": "https",
+                "tls_config": {
+                    "insecure_skip_verify": False,
+                    "ca": self.tls.pull_tls_file_from_workload(File.CA),
+                },
+                "metrics_path": "/v1/sys/metrics",
+                "static_configs": [{"targets": [f"{self._bind_address}:{VAULT_PORT}"]}],
+            }
+        ]
+
     @contextmanager
     def temp_maintenance_status(self, message: str):
         """Context manager to set the charm status temporarily.
@@ -581,10 +582,7 @@ class VaultOperatorCharm(CharmBase):
             event.fail(message="Backup not found in S3 bucket.")
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-        ):
+        if not vault or not vault.is_api_available():
             logger.error("Failed to restore vault. Vault API is not available.")
             event.fail(message="Failed to restore vault. Vault API is not available.")
             return
@@ -625,7 +623,6 @@ class VaultOperatorCharm(CharmBase):
         except ValueError:
             logger.info("No Vault raft database to remove")
 
-
     def _remove_node_from_raft_cluster(self):
         """Remove the node from the raft cluster."""
         if not (approle_auth := self._get_vault_approle_secret()):
@@ -646,10 +643,7 @@ class VaultOperatorCharm(CharmBase):
             logger.error("Can't remove node from cluster - Vault is sealed")
             return
         vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
-        if (
-            vault.is_node_in_raft_peers(node_id=self._node_id)
-            and vault.get_num_raft_peers() > 1
-        ):
+        if vault.is_node_in_raft_peers(node_id=self._node_id) and vault.get_num_raft_peers() > 1:
             vault.remove_raft_node(node_id=self._node_id)
 
     def _check_s3_pre_requisites(self) -> Optional[str]:
@@ -658,7 +652,7 @@ class VaultOperatorCharm(CharmBase):
             return "Only leader unit can perform backup operations"
         if not self._is_relation_created(S3_RELATION_NAME):
             return "S3 relation not created"
-        if missing_parameters:= self._get_missing_s3_parameters():
+        if missing_parameters := self._get_missing_s3_parameters():
             return "S3 parameters missing ({})".format(", ".join(missing_parameters))
         return None
 
@@ -685,7 +679,6 @@ class VaultOperatorCharm(CharmBase):
                 s3_parameters[key] = value.strip()
         return s3_parameters
 
-
     def _get_missing_s3_parameters(self) -> List[str]:
         """Return the list of missing S3 parameters.
 
@@ -696,14 +689,14 @@ class VaultOperatorCharm(CharmBase):
         return [param for param in REQUIRED_S3_PARAMETERS if param not in s3_parameters]
 
     def _generate_kv_for_requirer(
-            self,
-            relation: Relation,
-            app_name: str,
-            unit_name: str,
-            mount_suffix: str,
-            egress_subnet: str,
-            nonce: str,
-        ):
+        self,
+        relation: Relation,
+        app_name: str,
+        unit_name: str,
+        mount_suffix: str,
+        egress_subnet: str,
+        nonce: str,
+    ):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-kv request")
             return
@@ -737,7 +730,7 @@ class VaultOperatorCharm(CharmBase):
             role_name=role_name,
             policies=[policy_name],
             cidrs=[egress_subnet],
-            )
+        )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
@@ -795,7 +788,7 @@ class VaultOperatorCharm(CharmBase):
         outstanding_kv_requests = self.vault_kv.get_outstanding_kv_requests()
         for kv_request in outstanding_kv_requests:
             relation = self.model.get_relation(
-                relation_name = KV_RELATION_NAME, relation_id=kv_request.relation_id
+                relation_name=KV_RELATION_NAME, relation_id=kv_request.relation_id
             )
             if not relation:
                 logger.warning("Relation not found for relation id %s", kv_request.relation_id)
@@ -936,8 +929,9 @@ class VaultOperatorCharm(CharmBase):
         if not certificate:
             logger.debug("No certificate available")
             return
-        if (not self._is_intermediate_ca_common_name_valid(vault, common_name) or
-            not self._is_intermediate_ca_set(vault, certificate)):
+        if not self._is_intermediate_ca_common_name_valid(
+            vault, common_name
+        ) or not self._is_intermediate_ca_set(vault, certificate):
             vault.set_pki_intermediate_ca_certificate(
                 certificate=certificate, mount=VAULT_PKI_MOUNT
             )
@@ -1208,6 +1202,7 @@ class VaultOperatorCharm(CharmBase):
         """
         return f"{self.model.name}-{self.unit.name}"
 
+
 def get_common_name_from_certificate(certificate: str) -> str:
     """Get the common name from a certificate."""
     loaded_certificate = x509.load_pem_x509_certificate(certificate.encode("utf-8"))
@@ -1215,10 +1210,12 @@ def get_common_name_from_certificate(certificate: str) -> str:
         loaded_certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value  # type: ignore[reportAttributeAccessIssue]
     )
 
+
 def get_common_name_from_csr(csr: str) -> str:
     """Get the common name from a CSR."""
     loaded_csr = x509.load_pem_x509_csr(csr.encode("utf-8"))
     return str(loaded_csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value)  # type: ignore[reportAttributeAccessIssue]
+
 
 if __name__ == "__main__":  # pragma: nocover
     main(VaultOperatorCharm)
