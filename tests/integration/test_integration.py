@@ -33,6 +33,9 @@ S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
 VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
 VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
 
+MATCHING_COMMON_NAME = "example.com"
+UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
+
 
 async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) -> dict:
     """Run the `get-certificate` on the `self-signed-certificates` unit.
@@ -122,7 +125,7 @@ async def deploy_requiring_charms(ops_test: OpsTest, deploy_vault: None, request
         application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
         channel="stable",
         num_units=1,
-        config={"common_name": "test.example.com"},
+        config={"common_name": f"test.{MATCHING_COMMON_NAME}"},
     )
     deploy_grafana_agent = ops_test.model.deploy(
         GRAFANA_AGENT_APPLICATION_NAME,
@@ -576,7 +579,7 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
     assert ops_test.model
     vault_app = ops_test.model.applications[APP_NAME]
     assert vault_app
-    common_name = "unmatching-the-requirer.com"
+    common_name = UNMATCHING_COMMON_NAME
     common_name_config = {
         "common_name": common_name,
     }
@@ -620,7 +623,7 @@ async def test_given_vault_pki_relation_and_unmatching_common_name_when_integrat
         unit_address=leader_unit_address,
         mount="charm-pki",
     )
-    assert current_issuers_common_name == "unmatching-the-requirer.com"
+    assert current_issuers_common_name == UNMATCHING_COMMON_NAME
 
     action_output = await run_get_certificate_action(ops_test)
     assert action_output.get("certificate") is None
@@ -633,7 +636,7 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
     assert ops_test.model
     vault_app = ops_test.model.applications[APP_NAME]
     assert vault_app
-    common_name = "example.com"
+    common_name = MATCHING_COMMON_NAME
     common_name_config = {
         "common_name": common_name,
     }
