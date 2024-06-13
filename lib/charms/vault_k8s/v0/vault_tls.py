@@ -21,7 +21,6 @@ from charms.tls_certificates_interface.v3.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
-from exceptions import VaultCertsError
 from ops import EventBase, Object, RelationBrokenEvent, SecretNotFoundError
 from ops.charm import CharmBase
 from ops.pebble import PathError
@@ -34,7 +33,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 9
+LIBPATCH = 10
 
 
 class LogAdapter(logging.LoggerAdapter):
@@ -100,6 +99,14 @@ class WorkloadBase(ABC):
         pass
 
 
+class VaultCertsError(Exception):
+    """Exception raised when a vault certificate is not found."""
+
+    def __init__(self, message: str = "Could not retrieve vault certificates from local storage"):
+        self.message = message
+        super().__init__(self.message)
+
+
 class File(Enum):
     """This enum determines which files are expected of the library to read."""
 
@@ -107,6 +114,7 @@ class File(Enum):
     KEY = auto()
     CA = auto()
     CSR = auto()
+    AUTOUNSEAL_CA = auto()
 
 
 class VaultTLSManager(Object):
@@ -300,6 +308,16 @@ class VaultTLSManager(Object):
         else:
             self.tls_access.request_certificate_creation(new_csr)
 
+    def get_tls_file_path_in_workload(self, file: File) -> str:
+        """Return the requested file's location in the workload.
+
+        Args:
+            file: a File object that determines which file path to return
+        Returns:
+            the path of the file from the workload's perspective
+        """
+        return f"{self.tls_directory_path}/{file.name.lower()}.pem"
+
     def get_tls_file_path_in_charm(self, file: File) -> str:
         """Return the requested file's location in the charm (not in the workload).
 
@@ -419,7 +437,7 @@ class VaultTLSManager(Object):
         """
         try:
             with self.workload.pull(
-                f"{self.tls_directory_path}/{file.name.lower()}.pem",
+                self.get_tls_file_path_in_workload(file),
             ) as file_content:
                 return file_content.read().strip()
         except (PathError, FileNotFoundError):
@@ -432,8 +450,16 @@ class VaultTLSManager(Object):
             file: a File object that determines which file to write.
             data: the data to write into that file.
         """
-        self.workload.push(path=f"{self.tls_directory_path}/{file.name.lower()}.pem", source=data)
+        self.workload.push(path=self.get_tls_file_path_in_workload(file), source=data)
         logger.debug("Pushed %s file to workload", file.name)
+
+    def push_autounseal_ca_cert(self, ca_cert: str) -> None:
+        """Push the CA certificate to the workload.
+
+        Args:
+            ca_cert: The CA certificate to push to the workload.
+        """
+        self.workload.push(self.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA), ca_cert)
 
     def _remove_tls_file_from_workload(self, file: File) -> None:
         """Remove the certificate files that are used for authentication.
@@ -442,7 +468,7 @@ class VaultTLSManager(Object):
             file: a File object that determines which file to remove.
         """
         try:
-            self.workload.remove_path(path=f"{self.tls_directory_path}/{file.name.lower()}.pem")
+            self.workload.remove_path(path=self.get_tls_file_path_in_workload(file))
         except PathError:
             pass
         logger.debug("Removed %s file from workload.", file.name)
