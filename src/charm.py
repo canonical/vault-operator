@@ -258,6 +258,8 @@ class VaultOperatorCharm(CharmBase):
             role_id = vault.configure_approle(
                 role_name="charm",
                 policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
+                token_ttl="1h",
+                token_max_ttl="1h",
             )
             vault_secret_id = vault.generate_role_secret_id(name="charm")
             self._create_approle_secret(role_id, vault_secret_id)
@@ -730,6 +732,8 @@ class VaultOperatorCharm(CharmBase):
             role_name=role_name,
             policies=[policy_name],
             cidrs=[egress_subnet],
+            token_ttl="1h",
+            token_max_ttl="1h",
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
         secret = self._create_or_update_kv_secret(

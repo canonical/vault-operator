@@ -484,7 +484,10 @@ class TestCharm(unittest.TestCase):
             policy_name=VAULT_CHARM_POLICY_NAME, policy_path=VAULT_CHARM_POLICY_PATH
         )
         self.mock_vault.configure_approle.assert_called_once_with(
-            role_name="charm", policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME]
+            role_name="charm",
+            policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
+            token_ttl="1h",
+            token_max_ttl="1h",
         )
         self.mock_vault.generate_role_secret_id.assert_called_once_with(name="charm")
 
@@ -940,6 +943,8 @@ class TestCharm(unittest.TestCase):
             role_name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
             policies=["charm-vault-kv-requirer-suffix-vault-kv-requirer-0"],
             cidrs=["2.2.2.0/24"],
+            token_ttl="1h",
+            token_max_ttl="1h",
         )
         self.mock_vault.generate_role_secret_id.assert_called_with(
             name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
