@@ -25,6 +25,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Path to the KV requirer charm",
     )
 
+
 def pytest_configure(config: pytest.Config) -> None:
     """Validate the options provided by the user.
 

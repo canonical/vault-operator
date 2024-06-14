@@ -95,7 +95,7 @@ class Vault:
             servers = response["data"]["config"]["servers"]
             current_num_voters = sum(1 for server in servers if server.get("voter", False))
             current_num_nodes = len(servers)
-            if  current_num_nodes != expected_num_nodes:
+            if current_num_nodes != expected_num_nodes:
                 logger.info(f"Nodes in the raft cluster: {current_num_nodes}/{expected_num_nodes}")
                 continue
             if current_num_voters != expected_num_nodes:
