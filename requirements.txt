@@ -112,7 +112,7 @@ typing-extensions==4.10.0
     #   cosl
     #   mypy-boto3-s3
     #   pydantic
-urllib3==2.2.1
+urllib3==2.2.2
     # via
     #   botocore
     #   requests
