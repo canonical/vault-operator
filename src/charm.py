@@ -9,7 +9,7 @@ import datetime
 import json
 import logging
 from contextlib import contextmanager
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
@@ -345,7 +345,7 @@ class VaultOperatorCharm(CharmBase):
         if vault.is_sealed():
             event.add_status(BlockedStatus("Please unseal Vault"))
             return
-        if not self._get_vault_approle_secret():
+        if not self._get_vault_approle():
             event.add_status(
                 BlockedStatus("Please authorize charm (see `authorize-charm` action)")
             )
@@ -391,9 +391,9 @@ class VaultOperatorCharm(CharmBase):
             or vault.is_sealed()
         ):
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
 
         if vault.is_active() and not vault.is_raft_cluster_healthy():
             logger.warning("Raft cluster is not healthy: %s", vault.get_raft_cluster_state())
@@ -487,11 +487,11 @@ class VaultOperatorCharm(CharmBase):
             event.fail(message="Failed to initialize Vault client.")
             logger.error("Failed to run create-backup action - Failed to initialize Vault client.")
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             event.fail(message="Failed to authenticate to Vault.")
             logger.error("Failed to run create-backup action - Failed to authenticate to Vault.")
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         response = vault.create_snapshot()
         content_uploaded = s3.upload_content(
             content=response.raw,
@@ -588,11 +588,11 @@ class VaultOperatorCharm(CharmBase):
             logger.error("Failed to restore vault. Vault API is not available.")
             event.fail(message="Failed to restore vault. Vault API is not available.")
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             logger.error("Failed to authenticate to Vault.")
             event.fail(message="Failed to authenticate to Vault.")
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         try:
             response = vault.restore_snapshot(snapshot)  # type: ignore[arg-type]
         except VaultClientError as e:
@@ -627,7 +627,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _remove_node_from_raft_cluster(self):
         """Remove the node from the raft cluster."""
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             logger.error("Failed to authenticate to Vault")
             return
         api_address = self._api_address
@@ -644,7 +644,7 @@ class VaultOperatorCharm(CharmBase):
         if vault.is_sealed():
             logger.error("Can't remove node from cluster - Vault is sealed")
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         if vault.is_node_in_raft_peers(node_id=self._node_id) and vault.get_num_raft_peers() > 1:
             vault.remove_raft_node(node_id=self._node_id)
 
@@ -714,13 +714,13 @@ class VaultOperatorCharm(CharmBase):
             or vault.is_sealed()
         ):
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             return
         vault_url = self._get_relation_api_address(relation)
         if not vault_url:
             logger.debug("Vault URL not available")
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         mount = f"charm-{app_name}-{mount_suffix}"
         unit_name_dash = unit_name.replace("/", "-")
         policy_name = role_name = f"{mount}-{unit_name_dash}"
@@ -822,9 +822,9 @@ class VaultOperatorCharm(CharmBase):
             or vault.is_sealed()
         ):
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         common_name = self._get_config_common_name()
         if not common_name:
             logger.error("Common name is not set in the charm config")
@@ -874,9 +874,9 @@ class VaultOperatorCharm(CharmBase):
         ):
             logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         if not self._tls_certificates_pki_relation_created():
             logger.debug("TLS Certificates PKI relation not created, skipping")
             return
@@ -922,9 +922,9 @@ class VaultOperatorCharm(CharmBase):
         ):
             logger.debug("Vault is not ready to handle a vault-pki certificate request")
             return
-        if not (approle_auth := self._get_vault_approle_secret()):
+        if not (approle := self._get_vault_approle()):
             return
-        vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
+        vault.authenticate(approle)
         certificate = self._get_pki_intermediate_ca_certificate()
         if not certificate:
             logger.debug("No certificate available")
@@ -1036,8 +1036,14 @@ class VaultOperatorCharm(CharmBase):
         """
         return bool(self.model.get_relation(relation_name))
 
-    def _get_vault_approle_secret(self) -> Optional[Tuple[str, str]]:
-        """Get the approle secret."""
+    def _get_vault_approle(self) -> Optional[AppRole]:
+        """Get the approle details from the secret.
+
+        Returns:
+            AppRole: An AppRole object with role_id and secret_id set from the
+                     values stored in the Juju secret, or None if the secret is
+                     not found or either of the values are not set.
+        """
         try:
             secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
         except SecretNotFoundError:
@@ -1045,7 +1051,7 @@ class VaultOperatorCharm(CharmBase):
         content = secret.peek_content()
         if not (role_id := content.get("role-id")) or not (secret_id := content.get("secret-id")):
             return None
-        return (role_id, secret_id)
+        return AppRole(role_id, secret_id)
 
     def _remove_vault_approle_secret(self) -> None:
         """Remove the approle secret if it exists."""
