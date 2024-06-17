@@ -271,22 +271,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _create_approle_secret(self, role_id: str, secret_id: str) -> Secret:
         secret_content = {"role-id": role_id, "secret-id": secret_id}
-        try:
-            secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
-        except SecretNotFoundError:
-            # The secret doesn't exist yet, so we can continue like normal.
-            return self.app.add_secret(
-                secret_content,
-                label=VAULT_CHARM_APPROLE_SECRET_LABEL,
-            )
-
-        # The secret already exists, so we will update it and log a warning.
-        logger.warning(
-            "Secret with label `%s` already exists. Is the charm already authorized?",
-            VAULT_CHARM_APPROLE_SECRET_LABEL,
-        )
-        secret.set_content(secret_content)
-        return secret
+        return self._set_juju_secret(VAULT_CHARM_APPROLE_SECRET_LABEL, secret_content)
 
     def _get_vault_client(self) -> Vault | None:
         if not self._api_address:
@@ -751,6 +736,23 @@ class VaultOperatorCharm(CharmBase):
         if nonce not in set(credential_nonces):
             self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
 
+    def _set_juju_secret(
+        self, label: str, content: Dict[str, str], description: Optional[str] = None
+    ) -> Secret:
+        """Set the secret content at `label`, overwrite if it already exists.
+
+        Args:
+            label: The label of the secret.
+            content: The content of the secret.
+            description: The description of the secret.
+        """
+        try:
+            secret = self.model.get_secret(label=label)
+        except SecretNotFoundError:
+            return self.app.add_secret(content, label=label, description=description)
+        secret.set_content(content)
+        return secret
+
     def _create_or_update_kv_secret(
         self, role_name: str, role_id: str, role_secret_id: str
     ) -> Secret:
@@ -762,17 +764,9 @@ class VaultOperatorCharm(CharmBase):
             role_secret_id: The role secret ID to set in the secret
         """
         juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
-        try:
-            secret = self.model.get_secret(label=juju_secret_label)
-        except SecretNotFoundError:
-            return self.app.add_secret(
-                content={"role-id": role_id, "role-secret-id": role_secret_id},
-                label=juju_secret_label,
-            )
-        credentials = secret.get_content(refresh=True)
-        credentials["role-secret-id"] = role_secret_id
-        secret.set_content(credentials)
-        return secret
+        return self._set_juju_secret(
+            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}
+        )
 
     def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
         """Fetch the api address from relation and returns it.
@@ -977,11 +971,7 @@ class VaultOperatorCharm(CharmBase):
     def _set_pki_csr_secret(self, csr: str) -> None:
         """Set the PKI CSR secret."""
         juju_secret_content = {"csr": csr}
-        if not self._pki_csr_secret_set():
-            self.app.add_secret(juju_secret_content, label=VAULT_PKI_CSR_SECRET_LABEL)
-            return
-        secret = self.model.get_secret(label=VAULT_PKI_CSR_SECRET_LABEL)
-        secret.set_content(content=juju_secret_content)
+        self._set_juju_secret(VAULT_PKI_CSR_SECRET_LABEL, juju_secret_content)
 
     def _get_pki_csr_secret(self) -> Optional[str]:
         """Return the PKI CSR secret."""
