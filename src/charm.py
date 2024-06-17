@@ -925,13 +925,13 @@ class VaultOperatorCharm(CharmBase):
         if not (approle_auth := self._get_vault_approle_secret()):
             return
         vault.authenticate(AppRole(approle_auth[0], approle_auth[1]))
-        common_name = self._get_config_common_name()
-        if not common_name:
-            logger.error("Common name is not set in the charm config")
-            return
         certificate = self._get_pki_intermediate_ca_certificate()
         if not certificate:
             logger.debug("No certificate available")
+            return
+        common_name = self._get_config_common_name()
+        if not common_name:
+            logger.error("Common name is not set in the charm config")
             return
         if not self._is_intermediate_ca_common_name_valid(
             vault, common_name
