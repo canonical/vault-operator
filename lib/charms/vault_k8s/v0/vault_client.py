@@ -155,7 +155,11 @@ class Vault:
 
     def is_sealed(self) -> bool:
         """Return whether Vault is sealed."""
-        return self._client.sys.is_sealed()
+        try:
+            return self._client.sys.is_sealed()
+        except VaultError as e:
+            logging.error("Error while checking Vault seal status: %s", e)
+            raise VaultClientError(e) from e
 
     def needs_migration(self) -> bool:
         """Return true if the vault needs to be migrated, false otherwise."""

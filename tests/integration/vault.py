@@ -31,9 +31,20 @@ class Vault:
 
     def initialize(self) -> Tuple[str, str]:
         """Initialize the vault unit and return the root token and unseal key."""
-        initialize_response = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
-        root_token, unseal_key = initialize_response["root_token"], initialize_response["keys"][0]
-        return root_token, unseal_key
+        seal_type = self.client.seal_status["type"]  # type: ignore -- bad type hints in stubs
+        if seal_type == "shamir":
+            initialize_response = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
+            root_token, unseal_key = (
+                initialize_response["root_token"],
+                initialize_response["keys"][0],
+            )
+            return root_token, unseal_key
+        initialize_response = self.client.sys.initialize(recovery_shares=1, recovery_threshold=1)
+        root_token, recovery_key = (
+            initialize_response["root_token"],
+            initialize_response["recovery_keys"][0],
+        )
+        return root_token, recovery_key
 
     def is_initialized(self) -> bool:
         """Check if the vault unit is initialized."""

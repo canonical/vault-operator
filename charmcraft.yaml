@@ -33,12 +33,18 @@ storage:
     type: filesystem
     minimum-size: 5M
     location: /var/snap/vault/common/certs
+  config:
+    type: filesystem
+    location: /var/snap/vault/common/config
+    minimum-size: 5M
 
 peers:
   vault-peers:
     interface: vault-peer
 
 provides:
+  vault-autounseal-provides:
+    interface: vault-autounseal
   vault-kv:
     interface: vault-kv
   vault-pki:
@@ -51,6 +57,8 @@ provides:
       Send our CA certificate so clients can trust the CA by means of forming a relation.
 
 requires:
+  vault-autounseal-requires:
+    interface: vault-autounseal
   tls-certificates-access:
     interface: tls-certificates
     limit: 1
