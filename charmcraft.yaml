@@ -23,7 +23,7 @@ links:
   documentation: https://discourse.charmhub.io/t/vault-operator-machine/12983
 
 assumes:
-  - juju >= 3.1
+  - juju >= 3.1.8
 
 storage:
   vault:
