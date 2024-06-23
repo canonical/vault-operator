@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class VaultKVRequirerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
-        self.vault_kv = VaultKvRequires(self, "vault-kv", mount_suffix="kv")
+        self.vault_kv = VaultKvRequires(self, "vault-kv", mount_suffix="kv", wrap_ttl="120s")
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.vault_kv.on.connected, self._on_kv_connected)
         self.framework.observe(self.vault_kv.on.ready, self._on_kv_ready)
@@ -81,7 +81,7 @@ class VaultKVRequirerCharm(CharmBase):
             "vault-url": vault_url,
             "mount": mount,
             "role-id": secret_content["role-id"],
-            "role-secret-id": secret_content["role-secret-id"],
+            "wrapping-token": secret_content["wrapping-token"],
         }
         try:
             vault_kv_secret = self.model.get_secret(label=VAULT_KV_SECRET_LABEL)
@@ -120,7 +120,7 @@ class VaultKVRequirerCharm(CharmBase):
             url=secret_content["vault-url"],
             approle_role_id=secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{VAULT_CA_CERT_FILENAME}",
-            approle_secret_id=secret_content["role-secret-id"],
+            wrapping_token=secret_content["wrapping-token"],
         )
         vault.create_secret_in_kv(
             path=VAULT_KV_SECRET_PATH, mount=mount, key=secret_key, value=secret_value
@@ -146,7 +146,7 @@ class VaultKVRequirerCharm(CharmBase):
             url=secret_content["vault-url"],
             approle_role_id=secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{VAULT_CA_CERT_FILENAME}",
-            approle_secret_id=secret_content["role-secret-id"],
+            wrapping_token=secret_content["wrapping-token"],
         )
         vault_secret = vault.get_secret_in_kv(path=VAULT_KV_SECRET_PATH, mount=mount)
         if secret_key not in vault_secret:

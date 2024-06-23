@@ -11,7 +11,7 @@ import logging
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Optional, Protocol, Union
 
 import hvac
 import requests
@@ -289,6 +289,11 @@ class Vault:
         """Generate a new secret tied to an AppRole."""
         response = self._client.auth.approle.generate_secret_id(name, cidr_list=cidrs)
         return response["data"]["secret_id"]
+
+    def generate_role_wrapping_token(self, name: str, wrap_ttl: Union[int, str], cidrs: Optional[List[str]] = None) -> str:
+        """Generate a new wrapping token tied to an AppRole."""
+        response = self._client.auth.approle.generate_secret_id(name, cidr_list=cidrs, wrap_ttl=wrap_ttl)
+        return response["wrap_info"]["token"]
 
     def read_role_secret(self, name: str, id: str) -> dict:
         """Get definition of a secret tied to an AppRole."""
