@@ -532,7 +532,7 @@ class VaultOperatorCharm(CharmBase):
             return
         event.add_status(ActiveStatus())
 
-    def _configure(self, _):
+    def _configure(self, _):  # noqa: C901
         """Handle Vault installation.
 
         This includes:
@@ -565,12 +565,15 @@ class VaultOperatorCharm(CharmBase):
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                return
+        except VaultClientError:
             return
         if not (approle := self._get_vault_approle()):
             return
@@ -659,12 +662,19 @@ class VaultOperatorCharm(CharmBase):
             return
         backup_key = self._get_backup_key()
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                event.fail(message="Failed to initialize Vault client.")
+                logger.error(
+                    "Failed to run create-backup action - Failed to initialize Vault client."
+                )
+                return
+        except VaultClientError:
             event.fail(message="Failed to initialize Vault client.")
             logger.error("Failed to run create-backup action - Failed to initialize Vault client.")
             return
@@ -823,8 +833,12 @@ class VaultOperatorCharm(CharmBase):
         if not vault.is_initialized():
             logger.error("Can't remove node from cluster - Vault is not initialized")
             return
-        if vault.is_sealed():
-            logger.error("Can't remove node from cluster - Vault is sealed")
+        try:
+            if vault.is_sealed():
+                logger.error("Can't remove node from cluster - Vault is sealed")
+                return
+        except VaultClientError as e:
+            logger.error("Can't remove node from cluster - Vault status check failed: %s", e)
             return
         vault.authenticate(approle)
         if vault.is_node_in_raft_peers(node_id=self._node_id) and vault.get_num_raft_peers() > 1:
@@ -889,12 +903,15 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("Vault CA certificate not available")
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                return
+        except VaultClientError:
             return
         if not (approle := self._get_vault_approle()):
             return
@@ -1006,12 +1023,15 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("TLS Certificates PKI relation not created")
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                return
+        except VaultClientError:
             return
         if not (approle := self._get_vault_approle()):
             return
@@ -1057,12 +1077,18 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("Only leader unit can handle a vault-pki certificate request, skipping")
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                logger.debug(
+                    "Vault is not ready to handle a vault-pki certificate request, skipping"
+                )
+                return
+        except VaultClientError:
             logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
             return
         if not (approle := self._get_vault_approle()):
@@ -1105,12 +1131,16 @@ class VaultOperatorCharm(CharmBase):
             logger.debug("Only leader unit can handle a vault-pki certificate request")
             return
         vault = self._get_vault_client()
-        if (
-            not vault
-            or not vault.is_api_available()
-            or not vault.is_initialized()
-            or vault.is_sealed()
-        ):
+        try:
+            if (
+                not vault
+                or not vault.is_api_available()
+                or not vault.is_initialized()
+                or vault.is_sealed()
+            ):
+                logger.debug("Vault is not ready to handle a vault-pki certificate request")
+                return
+        except VaultClientError:
             logger.debug("Vault is not ready to handle a vault-pki certificate request")
             return
         if not (approle := self._get_vault_approle()):
