@@ -926,6 +926,7 @@ class TestCharm(unittest.TestCase):
         event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
         event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
         event.mount_suffix = "suffix"
+        event.wrap_ttl = None
         event.egress_subnet = "2.2.2.0/24"
         event.nonce = "123123"
 
@@ -949,6 +950,65 @@ class TestCharm(unittest.TestCase):
         self.mock_vault.generate_role_secret_id.assert_called_with(
             name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
             cidrs=["2.2.2.0/24"],
+        )
+
+    @patch("ops.model.Model.get_binding")
+    def test_given_prerequisites_are_met_when_new_vault_kv_client_attached_with_wrap_ttl_then_kv_mount_is_configured(  # noqa: E501
+        self,
+        patch_get_binding,
+    ):
+        self.mock_vault_tls_manager.pull_tls_file_from_workload.return_value = "whatever ca cert"
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "configure_approle.return_value": "12345678",
+                "generate_role_wrapping_token.return_value": "hvs.a_wrapping_token",
+                "is_initialized.return_value": True,
+                "is_api_available.return_value": True,
+                "is_sealed.return_value": False,
+            },
+        )
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "11111111"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        self.harness.set_leader(is_leader=True)
+        rel_id, _ = self.setup_vault_kv_relation()
+        event = Mock()
+        event.relation_name = VAULT_KV_RELATION_NAME
+        event.relation_id = rel_id
+        event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
+        event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
+        event.mount_suffix = "suffix"
+        event.wrap_ttl = "120s"
+        event.egress_subnet = "2.2.2.0/24"
+        event.nonce = "123123"
+
+        self.harness.charm._on_new_vault_kv_client_attached(event)
+
+        self.mock_vault.enable_secrets_engine.assert_called_with(
+            SecretsBackend.KV_V2, "charm-vault-kv-requirer-suffix"
+        )
+        self.mock_vault.configure_policy.assert_called_with(
+            policy_name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
+            policy_path="src/templates/kv_mount.hcl",
+            mount="charm-vault-kv-requirer-suffix",
+        )
+        self.mock_vault.configure_approle.assert_called_with(
+            role_name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
+            policies=["charm-vault-kv-requirer-suffix-vault-kv-requirer-0"],
+            cidrs=["2.2.2.0/24"],
+            token_ttl="1h",
+            token_max_ttl="1h",
+        )
+        self.mock_vault.generate_role_wrapping_token.assert_called_with(
+            name="charm-vault-kv-requirer-suffix-vault-kv-requirer-0",
+            cidrs=["2.2.2.0/24"],
+            wrap_ttl="120s",
         )
 
     def test_given_s3_relation_not_created_when_create_backup_action_then_action_fails(self):

@@ -9,7 +9,7 @@ import datetime
 import json
 import logging
 from contextlib import contextmanager
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
@@ -409,6 +409,7 @@ class VaultOperatorCharm(CharmBase):
             app_name=event.app_name,
             unit_name=event.unit_name,
             mount_suffix=event.mount_suffix,
+            wrap_ttl=event.wrap_ttl,
             egress_subnet=event.egress_subnet,
             nonce=event.nonce,
         )
@@ -681,6 +682,7 @@ class VaultOperatorCharm(CharmBase):
         app_name: str,
         unit_name: str,
         mount_suffix: str,
+        wrap_ttl: Union[int, str, None],
         egress_subnet: str,
         nonce: str,
     ):
@@ -720,11 +722,19 @@ class VaultOperatorCharm(CharmBase):
             token_ttl="1h",
             token_max_ttl="1h",
         )
-        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        role_secret_id = None
+        wrapping_token = None
+        if wrap_ttl is not None:
+            wrapping_token = vault.generate_role_wrapping_token(
+                name=role_name, cidrs=[egress_subnet], wrap_ttl=wrap_ttl
+            )
+        else:
+            role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
             role_id=role_id,
             role_secret_id=role_secret_id,
+            wrapping_token=wrapping_token,
         )
         secret.grant(relation)
         self.vault_kv.set_mount(relation, mount)
@@ -754,7 +764,11 @@ class VaultOperatorCharm(CharmBase):
         return secret
 
     def _create_or_update_kv_secret(
-        self, role_name: str, role_id: str, role_secret_id: str
+        self,
+        role_name: str,
+        role_id: str,
+        role_secret_id: Optional[str] = None,
+        wrapping_token: Optional[str] = None,
     ) -> Secret:
         """Create or update the KV secret for the relation.
 
@@ -762,10 +776,16 @@ class VaultOperatorCharm(CharmBase):
             role_name: The role name to set the secret for
             role_id: The role ID to set in the secret
             role_secret_id: The role secret ID to set in the secret
+            wrapping_token: The role wrapping token to set in the secret
         """
         juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
         return self._set_juju_secret(
-            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}
+            juju_secret_label,
+            {
+                "role-id": role_id,
+                "role-secret-id": role_secret_id if role_secret_id is not None else "",
+                "wrapping-token": wrapping_token if wrapping_token is not None else "",
+            },
         )
 
     def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
@@ -796,6 +816,7 @@ class VaultOperatorCharm(CharmBase):
                 app_name=kv_request.app_name,
                 unit_name=kv_request.unit_name,
                 mount_suffix=kv_request.mount_suffix,
+                wrap_ttl=kv_request.wrap_ttl,
                 egress_subnet=kv_request.egress_subnet,
                 nonce=kv_request.nonce,
             )

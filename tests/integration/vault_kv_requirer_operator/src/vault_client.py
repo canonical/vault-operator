@@ -9,11 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class Vault:
-    def __init__(
-        self, url: str, ca_certificate: str, approle_role_id: str, approle_secret_id: str
-    ):
+    def __init__(self, url: str, ca_certificate: str, approle_role_id: str, wrapping_token: str):
         self._client = hvac.Client(url=url, verify=ca_certificate)
-        self._approle_login(approle_role_id, approle_secret_id)
+        secret_id = self.unwrap_token(wrapping_token)
+        self._approle_login(approle_role_id, secret_id)
 
     def _approle_login(self, role_id: str, secret_id: str) -> None:
         """Login to Vault using AppRole."""
@@ -33,3 +32,7 @@ class Vault:
         """Get a secret from Vault KV."""
         response = self._client.secrets.kv.v2.read_secret(path=path, mount_point=mount)
         return response["data"]["data"]["data"]
+
+    def unwrap_token(self, wrapping_token: str):
+        response = self._client.sys.unwrap(token=wrapping_token)
+        return response["data"]["secret_id"]

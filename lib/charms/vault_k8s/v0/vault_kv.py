@@ -181,6 +181,13 @@ class AppVaultKvRequirerSchema(BaseModel):
         description="Suffix to append to the mount name to get the KV mount."
     )
 
+    wrap_ttl: Union[int, str, None] = Field(
+        description=(
+            "Returns the request as a response-wrapping token."
+            "Can be either an integer number of seconds or a string duration of seconds (`15s`)"
+        )
+    )
+
 
 class UnitVaultKvRequirerSchema(BaseModel):
     """Unit schema of the requirer side of the vault-kv interface."""
@@ -212,6 +219,7 @@ class KVRequest:
     app_name: str
     unit_name: str
     mount_suffix: str
+    wrap_ttl: Union[int, str, None]
     egress_subnet: str
     nonce: str
 
@@ -249,6 +257,7 @@ class NewVaultKvClientAttachedEvent(ops.EventBase):
         app_name: str,
         unit_name: str,
         mount_suffix: str,
+        wrap_ttl: Union[int, str, None],
         egress_subnet: str,
         nonce: str,
     ):
@@ -257,6 +266,7 @@ class NewVaultKvClientAttachedEvent(ops.EventBase):
         self.app_name = app_name
         self.unit_name = unit_name
         self.mount_suffix = mount_suffix
+        self.wrap_ttl = wrap_ttl
         self.egress_subnet = egress_subnet
         self.nonce = nonce
 
@@ -267,6 +277,7 @@ class NewVaultKvClientAttachedEvent(ops.EventBase):
             "app_name": self.app_name,
             "unit_name": self.unit_name,
             "mount_suffix": self.mount_suffix,
+            "wrap_ttl": self.wrap_ttl,
             "egress_subnet": self.egress_subnet,
             "nonce": self.nonce,
         }
@@ -278,6 +289,7 @@ class NewVaultKvClientAttachedEvent(ops.EventBase):
         self.app_name = snapshot["app_name"]
         self.unit_name = snapshot["unit_name"]
         self.mount_suffix = snapshot["mount_suffix"]
+        self.wrap_ttl = snapshot["wrap_ttl"]
         self.egress_subnet = snapshot["egress_subnet"]
         self.nonce = snapshot["nonce"]
 
@@ -289,7 +301,7 @@ class VaultKvProviderEvents(ops.ObjectEvents):
 
 
 class VaultKvProvides(ops.Object):
-    """Class to be instanciated by the providing side of the relation."""
+    """Class to be instantiated by the providing side of the relation."""
 
     on = VaultKvProviderEvents()  # type: ignore
 
@@ -325,6 +337,7 @@ class VaultKvProvides(ops.Object):
                 app_name=event.app.name,
                 unit_name=unit.name,
                 mount_suffix=event.relation.data[event.app]["mount_suffix"],
+                wrap_ttl=event.relation.data[event.app]["wrap_ttl"],
                 egress_subnet=event.relation.data[unit]["egress_subnet"],
                 nonce=event.relation.data[unit]["nonce"],
             )
@@ -440,6 +453,7 @@ class VaultKvProvides(ops.Object):
                         app_name=relation.app.name,
                         unit_name=unit.name,
                         mount_suffix=app_data["mount_suffix"],
+                        wrap_ttl=app_data["wrap_ttl"],
                         egress_subnet=unit_data["egress_subnet"],
                         nonce=unit_data["nonce"],
                     )
@@ -524,7 +538,7 @@ class VaultKvRequireEvents(ops.ObjectEvents):
 
 
 class VaultKvRequires(ops.Object):
-    """Class to be instanciated by the requiring side of the relation."""
+    """Class to be instantiated by the requiring side of the relation."""
 
     on = VaultKvRequireEvents()  # type: ignore
 
@@ -533,11 +547,13 @@ class VaultKvRequires(ops.Object):
         charm: ops.CharmBase,
         relation_name: str,
         mount_suffix: str,
+        wrap_ttl: Union[int, str, None] = None,
     ) -> None:
         super().__init__(charm, relation_name)
         self.charm = charm
         self.relation_name = relation_name
         self.mount_suffix = mount_suffix
+        self.wrap_ttl = wrap_ttl
         self.framework.observe(
             self.charm.on[relation_name].relation_joined,
             self._handle_relation,
@@ -574,6 +590,7 @@ class VaultKvRequires(ops.Object):
             return
         if self.charm.unit.is_leader():
             relation.data[self.charm.app]["mount_suffix"] = self.mount_suffix
+            relation.data[self.charm.app]["wrap_ttl"] = self.wrap_ttl
         self.on.connected.emit(
             relation.id,
             relation.name,
