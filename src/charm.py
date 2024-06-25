@@ -40,7 +40,6 @@ from charms.vault_k8s.v0.vault_kv import NewVaultKvClientAttachedEvent, VaultKvP
 from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from charms.vault_k8s.v0.vault_tls import (
     File,
-    VaultCertsError,
     VaultTLSManager,
 )
 from cryptography import x509
@@ -289,15 +288,8 @@ class VaultOperatorCharm(CharmBase):
                    `None` if the client could not be successfully created or
                    has not been authorized.
         """
-        if not self._api_address:
-            return None
-        try:
-            vault = Vault(
-                url=self._api_address,
-                ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
-            )
-        except VaultCertsError as e:
-            logger.warning("Failed to get Vault client: %s", e)
+        vault = self._get_vault_client()
+        if not vault:
             return None
         if not vault.is_api_available():
             return None
@@ -564,20 +556,9 @@ class VaultOperatorCharm(CharmBase):
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
             return
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             return
-        if not (approle := self._get_vault_approle()):
-            return
-        vault.authenticate(approle)
 
         if vault.is_active() and not vault.is_raft_cluster_healthy():
             logger.warning("Raft cluster is not healthy: %s", vault.get_raft_cluster_state())
@@ -661,28 +642,11 @@ class VaultOperatorCharm(CharmBase):
             logger.error("Failed to run create-backup action - Failed to create S3 bucket.")
             return
         backup_key = self._get_backup_key()
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                event.fail(message="Failed to initialize Vault client.")
-                logger.error(
-                    "Failed to run create-backup action - Failed to initialize Vault client."
-                )
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             event.fail(message="Failed to initialize Vault client.")
             logger.error("Failed to run create-backup action - Failed to initialize Vault client.")
             return
-        if not (approle := self._get_vault_approle()):
-            event.fail(message="Failed to authenticate to Vault.")
-            logger.error("Failed to run create-backup action - Failed to authenticate to Vault.")
-            return
-        vault.authenticate(approle)
         response = vault.create_snapshot()
         content_uploaded = s3.upload_content(
             content=response.raw,
@@ -902,24 +866,12 @@ class VaultOperatorCharm(CharmBase):
         if not ca_certificate:
             logger.debug("Vault CA certificate not available")
             return
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             return
-        if not (approle := self._get_vault_approle()):
-            return
-        vault_url = self._get_relation_api_address(relation)
+        vault_url = self._api_address
         if not vault_url:
-            logger.debug("Vault URL not available")
             return
-        vault.authenticate(approle)
         mount = f"charm-{app_name}-{mount_suffix}"
         unit_name_dash = unit_name.replace("/", "-")
         policy_name = role_name = f"{mount}-{unit_name_dash}"
@@ -1022,20 +974,9 @@ class VaultOperatorCharm(CharmBase):
         if not self._tls_certificates_pki_relation_created():
             logger.debug("TLS Certificates PKI relation not created")
             return
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             return
-        if not (approle := self._get_vault_approle()):
-            return
-        vault.authenticate(approle)
         common_name = self._get_config_common_name()
         if not common_name:
             logger.error("Common name is not set in the charm config")
@@ -1076,24 +1017,10 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request, skipping")
             return
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                logger.debug(
-                    "Vault is not ready to handle a vault-pki certificate request, skipping"
-                )
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
             return
-        if not (approle := self._get_vault_approle()):
-            return
-        vault.authenticate(approle)
         if not self._tls_certificates_pki_relation_created():
             logger.debug("TLS Certificates PKI relation not created, skipping")
             return
@@ -1130,22 +1057,10 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request")
             return
-        vault = self._get_vault_client()
-        try:
-            if (
-                not vault
-                or not vault.is_api_available()
-                or not vault.is_initialized()
-                or vault.is_sealed()
-            ):
-                logger.debug("Vault is not ready to handle a vault-pki certificate request")
-                return
-        except VaultClientError:
+        vault = self._get_active_vault_client()
+        if not vault:
             logger.debug("Vault is not ready to handle a vault-pki certificate request")
             return
-        if not (approle := self._get_vault_approle()):
-            return
-        vault.authenticate(approle)
         certificate = self._get_pki_intermediate_ca_certificate()
         if not certificate:
             logger.debug("No certificate available")
