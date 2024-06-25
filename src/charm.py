@@ -132,7 +132,7 @@ def _render_vault_config_file(
     return content
 
 
-def _seal_type_has_changed(content_a: str, content_b: str) -> bool:
+def _seal_types_are_different(content_a: str, content_b: str) -> bool:
     """Check if the seal type has changed between two versions of the Vault configuration file.
 
     Currently only checks if the transit stanza is present or not, since this
@@ -1409,7 +1409,7 @@ class VaultOperatorCharm(CharmBase):
             # If the seal type has changed, we need to restart Vault to apply
             # the changes. SIGHUP is currently only supported as a beta feature
             # for the enterprise version in Vault 1.16+
-            if _seal_type_has_changed(existing_content, content):
+            if _seal_types_are_different(existing_content, content):
                 if self._vault_service_is_running():
                     self.machine.restart(VAULT_SNAP_NAME)
 
