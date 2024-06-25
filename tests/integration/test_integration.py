@@ -852,7 +852,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
 
 @pytest.mark.abort_on_fail
 @pytest.mark.autounseal
-async def test_given_vault_b_is_deployed_and_unsealed_when_add_unit_then_status_is_active(
+async def test_given_vault_b_is_deployed_and_autounsealed_when_add_unit_then_status_is_active(
     ops_test: OpsTest, deployed_vault_initialized_leader: None
 ):
     assert ops_test.model

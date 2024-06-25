@@ -193,6 +193,20 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
+    def _set_approle_secret(self, role_id: str, secret_id: str) -> None:
+        """Set the approle secret."""
+        content = {
+            "role-id": role_id,
+            "secret-id": secret_id,
+        }
+        original_leader_state = self.harness.charm.unit.is_leader()
+        with self.harness.hooks_disabled():
+            self.harness.set_leader(is_leader=True)
+            secret_id = self.harness.add_model_secret(owner=self.app_name, content=content)
+            secret = self.harness.model.get_secret(id=secret_id)
+            secret.set_info(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+            self.harness.set_leader(original_leader_state)
+
     def setup_vault_kv_relation(self) -> tuple:
         app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
         unit_name = app_name + "/0"
@@ -1550,20 +1564,6 @@ class TestCharm(unittest.TestCase):
         self.mock_vault.authenticate.assert_called_with(AppRole(role_id, secret_id))
         self.mock_vault_tls_manager.push_autounseal_ca_cert.assert_called_with(ca_cert)
 
-    def _set_approle_secret(self, role_id: str, secret_id: str) -> None:
-        """Set the approle secret."""
-        content = {
-            "role-id": role_id,
-            "secret-id": secret_id,
-        }
-        original_leader_state = self.harness.charm.unit.is_leader()
-        with self.harness.hooks_disabled():
-            self.harness.set_leader(is_leader=True)
-            secret_id = self.harness.add_model_secret(owner=self.app_name, content=content)
-            secret = self.harness.model.get_secret(id=secret_id)
-            secret.set_info(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
-            self.harness.set_leader(original_leader_state)
-
     @patch(f"{VAULT_AUTOUNSEAL_LIB_PATH}.VaultAutounsealProvides.set_autounseal_data")
     def test_when_autounseal_initialize_then_credentials_are_set(self, mock_set_autounseal_data):
         # Given
@@ -1603,7 +1603,9 @@ class TestCharm(unittest.TestCase):
             "ca cert",
         )
 
-    def test_when_autounseal_destroy_then_credentials_are_removed(self):
+    def test_given_autounseal_requirer_present_when_autounseal_destroy_then_credentials_are_removed(  # noqa: E501
+        self,
+    ):
         # Given
         self.mock_vault.configure_mock(
             **{
