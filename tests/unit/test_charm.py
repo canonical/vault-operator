@@ -1532,7 +1532,7 @@ class TestCharm(unittest.TestCase):
         secret_id = "secret_id"
         ca_cert = "ca_cert"
         mock_get_details.return_value = AutounsealDetails(
-            address, key_name, role_id, secret_id, ca_cert
+            address, AUTOUNSEAL_MOUNT_PATH, key_name, role_id, secret_id, ca_cert
         )
         relation_id = self.harness.add_relation(
             relation_name="vault-autounseal-requires", remote_app="autounseal-provider"
@@ -1550,7 +1550,7 @@ class TestCharm(unittest.TestCase):
 
         # When
         self.harness.charm.vault_autounseal_requires.on.vault_autounseal_details_ready.emit(
-            address, key_name, role_id, secret_id, ca_cert
+            address, AUTOUNSEAL_MOUNT_PATH, key_name, role_id, secret_id, ca_cert
         )
 
         # Then
@@ -1597,6 +1597,7 @@ class TestCharm(unittest.TestCase):
         mock_set_autounseal_data.assert_called_once_with(
             relation,
             "https://10.0.0.10:8200",
+            AUTOUNSEAL_MOUNT_PATH,
             "key name",
             "autounseal role id",
             "autounseal secret id",
