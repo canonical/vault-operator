@@ -1532,7 +1532,7 @@ class TestCharm(unittest.TestCase):
         secret_id = "secret_id"
         ca_cert = "ca_cert"
         mock_get_details.return_value = AutounsealDetails(
-            address, key_name, role_id, secret_id, ca_cert
+            address, AUTOUNSEAL_MOUNT_PATH, key_name, role_id, secret_id, ca_cert
         )
         relation_id = self.harness.add_relation(
             relation_name="vault-autounseal-requires", remote_app="autounseal-provider"
@@ -1550,7 +1550,7 @@ class TestCharm(unittest.TestCase):
 
         # When
         self.harness.charm.vault_autounseal_requires.on.vault_autounseal_details_ready.emit(
-            address, key_name, role_id, secret_id, ca_cert
+            address, AUTOUNSEAL_MOUNT_PATH, key_name, role_id, secret_id, ca_cert
         )
 
         # Then
@@ -1559,8 +1559,9 @@ class TestCharm(unittest.TestCase):
         assert kwargs["path"] == "/var/snap/vault/common/vault.hcl"
         pushed_content_hcl = hcl.loads(kwargs["source"])
         assert pushed_content_hcl["seal"]["transit"]["address"] == address
-        assert pushed_content_hcl["seal"]["transit"]["token"] == "some token"
+        assert pushed_content_hcl["seal"]["transit"]["mount_path"] == AUTOUNSEAL_MOUNT_PATH
         assert pushed_content_hcl["seal"]["transit"]["key_name"] == "some key"
+        assert pushed_content_hcl["seal"]["transit"]["token"] == "some token"
         self.mock_vault.authenticate.assert_called_with(AppRole(role_id, secret_id))
         self.mock_vault_tls_manager.push_autounseal_ca_cert.assert_called_with(ca_cert)
 
@@ -1597,6 +1598,7 @@ class TestCharm(unittest.TestCase):
         mock_set_autounseal_data.assert_called_once_with(
             relation,
             "https://10.0.0.10:8200",
+            AUTOUNSEAL_MOUNT_PATH,
             "key name",
             "autounseal role id",
             "autounseal secret id",

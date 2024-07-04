@@ -367,6 +367,7 @@ class VaultOperatorCharm(CharmBase):
         self.vault_autounseal_provides.set_autounseal_data(
             relation,
             vault_address,
+            AUTOUNSEAL_MOUNT_PATH,
             key_name,
             approle_id,
             approle_secret_id,
