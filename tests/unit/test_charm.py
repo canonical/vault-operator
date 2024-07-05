@@ -193,6 +193,19 @@ class TestCharm(unittest.TestCase):
             key_values=key_values,
         )
 
+    def _set_root_token_secret(self, token: str = "some token") -> str:
+        """Set the root token secret."""
+        content = {
+            "token": token,
+        }
+        original_leader_state = self.harness.charm.unit.is_leader()
+        with self.harness.hooks_disabled():
+            self.harness.set_leader(is_leader=True)
+            secret_id = self.harness.add_user_secret(content=content)
+            self.harness.grant_secret(secret_id, self.app_name)
+            self.harness.set_leader(original_leader_state)
+        return secret_id
+
     def _set_approle_secret(self, role_id: str, secret_id: str) -> None:
         """Set the approle secret."""
         content = {
@@ -478,6 +491,7 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation_unit(
             relation_id=peer_relation_id, remote_unit_name=other_unit_name
         )
+        secret_id = self._set_root_token_secret("test-token")
 
         self._set_other_node_api_address_in_peer_relation(
             relation_id=peer_relation_id, unit_name=other_unit_name
@@ -491,7 +505,9 @@ class TestCharm(unittest.TestCase):
             },
         )
 
-        action_result = self.harness.run_action("authorize-charm", {"token": "test-token"}).results
+        action_result = self.harness.run_action(
+            "authorize-charm", {"secret-id": secret_id}
+        ).results
 
         # Assertions
         self.mock_vault.authenticate.assert_called_once_with(Token("test-token"))
@@ -516,7 +532,10 @@ class TestCharm(unittest.TestCase):
 
         assert secret_content["role-id"] == "approle_id"
         assert secret_content["secret-id"] == "secret_id"
-        assert action_result["result"] == "Charm authorized successfully."
+        assert (
+            action_result["result"]
+            == "Charm authorized successfully. You may now remove the secret."
+        )
 
     @patch("charm.get_common_name_from_certificate", new=Mock)
     @patch(f"{TLS_CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation")

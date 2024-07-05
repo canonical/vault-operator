@@ -411,6 +411,20 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             event.fail("This action can only be run by the leader unit")
             return
+
+        secret_id = event.params.get("secret-id", "")
+        try:
+            token_secret = self.model.get_secret(id=secret_id)
+            token = token_secret.get_content(refresh=True).get("token", "")
+        except SecretNotFoundError:
+            event.fail(
+                (
+                    "The secret id provided could not be found by the charm. "
+                    "Please grant the token secret to the charm."
+                )
+            )
+            return
+
         logger.info("Authorizing the charm to interact with Vault")
         if not self._api_address:
             event.fail("API address is not available.")
@@ -418,7 +432,6 @@ class VaultOperatorCharm(CharmBase):
         if not self.tls.tls_file_available_in_charm(File.CA):
             event.fail("CA certificate is not available in the charm. Something is wrong.")
             return
-        token = event.params["token"]
         vault = self._get_vault_client()
         if not vault:
             event.fail("Failed to initialize the Vault client")
@@ -438,7 +451,9 @@ class VaultOperatorCharm(CharmBase):
             )
             vault_secret_id = vault.generate_role_secret_id(name="charm")
             self._create_approle_secret(role_id, vault_secret_id)
-            event.set_results({"result": "Charm authorized successfully."})
+            event.set_results(
+                {"result": "Charm authorized successfully. You may now remove the secret."}
+            )
         except VaultClientError as e:
             logger.exception("Vault returned an error while authorizing the charm")
             event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
