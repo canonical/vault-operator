@@ -2,15 +2,13 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: ["main", "release-*"]
   push:
-    branches:
-      - main
+    branches: ["main", "release-*"]
 
 concurrency:
-    group: ${{ github.ref == 'refs/heads/main' && format('ignore-main-{0}', github.run_id) || format('{0}-{1}', github.workflow, github.ref_name) }}
-    cancel-in-progress: true
+  group: ${{ (github.ref == 'refs/heads/main' && format('ignore-main-{0}', github.run_id)) || (contains(github.ref, 'refs/heads/release-') && format('ignore-release-{0}', github.run_id)) || format('{0}-{1}', github.workflow, github.ref_name) }}
+  cancel-in-progress: true
 
 jobs:
   lint-report:
@@ -22,7 +20,7 @@ jobs:
 
   unit-tests-with-coverage:
     uses: ./.github/workflows/unit-test.yaml
-  
+
   build:
     needs:
       - lint-report
@@ -30,7 +28,7 @@ jobs:
       - unit-tests-with-coverage
     uses: ./.github/workflows/build.yaml
     secrets: inherit
-  
+
   integration-tests:
     needs:
       - build
@@ -44,6 +42,6 @@ jobs:
       - unit-tests-with-coverage
       - build
       - integration-tests
-    if: ${{ github.ref_name == 'main' }}
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
     uses: ./.github/workflows/publish-charm.yaml
     secrets: inherit
