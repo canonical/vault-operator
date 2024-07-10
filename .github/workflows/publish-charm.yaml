@@ -17,7 +17,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: built-charm
-      
+
       - name: Get Charm Under Test Path
         id: charm-path
         run: echo "charm_path=$(find . -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
@@ -28,7 +28,7 @@ jobs:
           built-charm-path: ${{ steps.charm-path.outputs.charm_path }}
           credentials: "${{ secrets.CHARMCRAFT_AUTH }}"
           github-token: "${{ secrets.GITHUB_TOKEN }}"
-          channel: 1.15/edge
+          channel: 1.16/edge
 
       - name: Archive charmcraft logs
         if: failure()
