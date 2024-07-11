@@ -10,6 +10,7 @@ updates:
       github_actions:
         patterns:
           - "*"
+    target-branch: "release-1.15"
 
   - package-ecosystem: "pip"
     directory: "/"
@@ -21,3 +22,17 @@ updates:
       pip_dependencies:
         patterns:
           - "*"
+    target-branch: "release-1.15"
+
+
+  - package-ecosystem: "pip"
+    directory: "/tests/integration/vault_kv_requirer_operator/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore: "
+    groups:
+      pip_dependencies:
+        patterns:
+          - "*"
+    target-branch: "release-1.15"
