@@ -80,9 +80,9 @@ VAULT_PKI_CSR_SECRET_LABEL = "pki-csr"
 VAULT_PKI_MOUNT = "charm-pki"
 VAULT_PKI_ROLE = "charm-pki"
 VAULT_PORT = 8200
-VAULT_SNAP_CHANNEL = "1.15/stable"
+VAULT_SNAP_CHANNEL = "1.16/stable"
 VAULT_SNAP_NAME = "vault"
-VAULT_SNAP_REVISION = "2226"
+VAULT_SNAP_REVISION = "2300"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
 
 
