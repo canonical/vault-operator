@@ -18,7 +18,7 @@ from vault import Vault
 
 from tests.integration.helpers import (
     get_leader_unit,
-    wait_for_vault_status_message,
+    wait_for_status_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,10 @@ async def deploy_requiring_charms(ops_test: OpsTest, deployed_vault: None, reque
         application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
         channel="stable",
         num_units=1,
-        config={"common_name": f"test.{MATCHING_COMMON_NAME}"},
+        config={
+            "common_name": f"test.{MATCHING_COMMON_NAME}",
+            "sans_dns": f"test.{MATCHING_COMMON_NAME}",
+        },
     )
     deploy_grafana_agent = ops_test.model.deploy(
         GRAFANA_AGENT_APPLICATION_NAME,
@@ -701,6 +704,12 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
         status="active",
         timeout=1000,
     )
+    await wait_for_status_message(
+        ops_test,
+        expected_message="Unit certificate is available",
+        app_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
+        count=1,
+    )
 
     root_token, _ = deployed_vault_initialized_leader
     leader_unit_address = await get_leader_unit_address(ops_test)
@@ -830,7 +839,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
             apps=["vault-b"], status="blocked", wait_for_exact_units=1, idle_period=5
         )
 
-        await wait_for_vault_status_message(
+        await wait_for_status_message(
             ops_test=ops_test,
             count=1,
             expected_message="Please initialize Vault",
@@ -838,7 +847,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
         )
 
         root_token, recovery_key = await initialize_vault_leader(ops_test, "vault-b")
-        await wait_for_vault_status_message(
+        await wait_for_status_message(
             ops_test=ops_test,
             count=1,
             expected_message="Please authorize charm (see `authorize-charm` action)",
