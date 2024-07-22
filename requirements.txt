@@ -8,11 +8,11 @@ attrs==23.2.0
     # via
     #   jsonschema
     #   referencing
-boto3==1.34.144
+boto3==1.34.145
     # via -r requirements.in
-boto3-stubs[s3]==1.34.144
+boto3-stubs[s3]==1.34.145
     # via -r requirements.in
-botocore==1.34.144
+botocore==1.34.145
     # via
     #   boto3
     #   s3transfer
@@ -26,7 +26,7 @@ charset-normalizer==3.3.2
     # via requests
 click==8.1.7
     # via typer
-cosl==0.0.12
+cosl==0.0.13
     # via -r requirements.in
 cryptography==42.0.8
     # via
@@ -52,7 +52,7 @@ markupsafe==2.1.5
     # via jinja2
 mypy-boto3-s3==1.34.65
     # via boto3-stubs
-ops==2.14.1
+ops==2.15.0
     # via
     #   -r requirements.in
     #   cosl
@@ -61,7 +61,7 @@ ops-scenario==6.0.3
     # via pytest-interface-tester
 packaging==24.0
     # via pytest
-pluggy==1.4.0
+pluggy==1.5.0
     # via pytest
 psutil==6.0.0
     # via -r requirements.in
@@ -70,12 +70,13 @@ pycparser==2.22
 pydantic==1.10.17
     # via
     #   -r requirements.in
+    #   cosl
     #   pytest-interface-tester
 pyhcl==0.4.5
     # via -r requirements.in
-pyopenssl==24.1.0
+pyopenssl==24.2.1
     # via -r requirements.in
-pytest==8.1.2
+pytest==8.3.1
     # via pytest-interface-tester
 pytest-interface-tester==2.0.1
     # via -r requirements.in
