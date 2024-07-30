@@ -903,10 +903,12 @@ class VaultOperatorCharm(CharmBase):
             token_max_ttl="1h",
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        current_credentials = self.vault_kv.get_credentials(relation)
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
             role_id=role_id,
             role_secret_id=role_secret_id,
+            id=current_credentials.get(nonce, None),
         )
         secret.grant(relation)
         self.vault_kv.set_mount(relation, mount)
@@ -919,7 +921,11 @@ class VaultOperatorCharm(CharmBase):
             self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
 
     def _set_juju_secret(
-        self, label: str, content: Dict[str, str], description: Optional[str] = None
+        self,
+        label: str,
+        content: Dict[str, str],
+        description: Optional[str] = None,
+        id: Optional[str] = None,
     ) -> Secret:
         """Set the secret content at `label`, overwrite if it already exists.
 
@@ -927,16 +933,21 @@ class VaultOperatorCharm(CharmBase):
             label: The label of the secret.
             content: The content of the secret.
             description: The description of the secret.
+            id: ID of the secret that should be updated
         """
         try:
-            secret = self.model.get_secret(label=label)
+            secret = self.model.get_secret(id=id, label=label)
         except SecretNotFoundError:
             return self.app.add_secret(content, label=label, description=description)
         secret.set_content(content)
         return secret
 
     def _create_or_update_kv_secret(
-        self, role_name: str, role_id: str, role_secret_id: str
+        self,
+        role_name: str,
+        role_id: str,
+        role_secret_id: str,
+        id: Optional[str] = None,
     ) -> Secret:
         """Create or update the KV secret for the relation.
 
@@ -944,10 +955,11 @@ class VaultOperatorCharm(CharmBase):
             role_name: The role name to set the secret for
             role_id: The role ID to set in the secret
             role_secret_id: The role secret ID to set in the secret
+            id: Secret ID that should be updated
         """
         juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
         return self._set_juju_secret(
-            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}
+            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}, id=id
         )
 
     def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
