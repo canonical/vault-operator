@@ -31,44 +31,46 @@ async def get_leader_unit(model, application_name: str) -> Unit:
 async def get_unit_status_messages(
     ops_test: OpsTest, app_name: str = APP_NAME
 ) -> List[tuple[str, str]]:
-    """Get the status messages from all the units of the given application."""
+    """Get the status messages from all the units of the given application.
+
+    Returns:
+        A list of tuples with the unit name in the first entry, and the status
+        message in the second
+    """
     return_code, stdout, stderr = await ops_test.juju("status", "--format", "yaml", app_name)
     if return_code:
         raise RuntimeError(stderr)
     output = yaml.safe_load(stdout)
     unit_statuses = output["applications"][app_name]["units"]
     return [
-        (unit_name, unit_status["workload-status"]["message"])
+        (unit_name, unit_status["workload-status"].get("message", ""))
         for (unit_name, unit_status) in unit_statuses.items()
     ]
 
 
-async def wait_for_vault_status_message(
+async def wait_for_status_message(
     ops_test: OpsTest,
-    count: int,
     expected_message: str,
+    app_name: str = APP_NAME,
+    count: int = 1,
     timeout: int = 100,
     cadence: int = 2,
-    app_name: str = APP_NAME,
 ) -> None:
-    """Wait for the correct vault status messages to appear.
-
-    This function is necessary because ops_test doesn't provide the facilities
-    to discriminate depending on the status message of the units, just the
-    application statuses.
+    """Wait for the correct status messages to appear.
 
     Args:
         ops_test: Ops test Framework.
-        count: How many units that are expected to be emitting the expected message
-        expected_message: The message that vault units should be setting as a status message
-        timeout: Wait time in seconds to get proxied endpoints.
-        cadence: How long to wait before running the command again
         app_name: Application name of the Vault, defaults to "vault-k8s"
+        count: How many units are expected to be emitting the message
+        expected_message: The message that vault units should be setting as a status message
+        timeout: Wait time, in seconds, before giving up
+        cadence: How often to check the status of the units
 
     Raises:
         TimeoutError: If the expected amount of statuses weren't found in the given timeout.
     """
     seen = 0
+    unit_statuses = []
     while timeout > 0:
         unit_statuses = await get_unit_status_messages(ops_test, app_name=app_name)
         seen = 0
@@ -80,4 +82,7 @@ async def wait_for_vault_status_message(
             return
         time.sleep(cadence)
         timeout -= cadence
-    raise TimeoutError(f"Vault didn't show the expected status: `{expected_message}`")
+
+    raise TimeoutError(
+        f"`{app_name}` didn't show the expected status: `{expected_message}`. Last statuses: {unit_statuses}"
+    )
