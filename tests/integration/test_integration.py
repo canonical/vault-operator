@@ -131,7 +131,10 @@ async def deploy_requiring_charms(ops_test: OpsTest, deployed_vault: None, reque
         application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
         channel="stable",
         num_units=1,
-        config={"common_name": f"test.{MATCHING_COMMON_NAME}"},
+        config={
+            "common_name": f"test.{MATCHING_COMMON_NAME}",
+            "sans_dns": f"test.{MATCHING_COMMON_NAME}",
+        },
     )
     deploy_grafana_agent = ops_test.model.deploy(
         GRAFANA_AGENT_APPLICATION_NAME,

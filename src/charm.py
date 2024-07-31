@@ -904,6 +904,9 @@ class VaultOperatorCharm(CharmBase):
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
         current_credentials = self.vault_kv.get_credentials(relation)
+        # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
+        # Until the reference bug is fixed we must pass the secret ID here
+        # not to lose the secret://modeluuid:secretID format
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
             role_id=role_id,
@@ -947,7 +950,7 @@ class VaultOperatorCharm(CharmBase):
         role_name: str,
         role_id: str,
         role_secret_id: str,
-        id: Optional[str] = None,
+        id: str,
     ) -> Secret:
         """Create or update the KV secret for the relation.
 
