@@ -872,7 +872,7 @@ class VaultOperatorCharm(CharmBase):
         app_name: str,
         unit_name: str,
         mount_suffix: str,
-        egress_subnet: str,
+        egress_subnet: List[str],
         nonce: str,
     ):
         if not self.unit.is_leader():
@@ -898,11 +898,11 @@ class VaultOperatorCharm(CharmBase):
         role_id = vault.configure_approle(
             role_name=role_name,
             policies=[policy_name],
-            cidrs=[egress_subnet],
+            cidrs=egress_subnet,
             token_ttl="1h",
             token_max_ttl="1h",
         )
-        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=egress_subnet)
         current_credentials = self.vault_kv.get_credentials(relation)
         # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
         # Until the reference bug is fixed we must pass the secret ID here

@@ -964,7 +964,7 @@ class TestCharm(unittest.TestCase):
         event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
         event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
         event.mount_suffix = "suffix"
-        event.egress_subnet = "2.2.2.0/24"
+        event.egress_subnet = ["2.2.2.0/24"]
         event.nonce = "123123"
 
         self.harness.charm._on_new_vault_kv_client_attached(event)
