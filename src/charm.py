@@ -903,15 +903,10 @@ class VaultOperatorCharm(CharmBase):
             token_max_ttl="1h",
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
-        current_credentials = self.vault_kv.get_credentials(relation)
-        # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
-        # Until the reference bug is fixed we must pass the secret ID here
-        # not to lose the secret://modeluuid:secretID format
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
             role_id=role_id,
             role_secret_id=role_secret_id,
-            id=current_credentials.get(nonce, None),
         )
         secret.grant(relation)
         self.vault_kv.set_mount(relation, mount)
@@ -950,7 +945,6 @@ class VaultOperatorCharm(CharmBase):
         role_name: str,
         role_id: str,
         role_secret_id: str,
-        id: Optional[str] = None,
     ) -> Secret:
         """Create or update the KV secret for the relation.
 
@@ -958,12 +952,41 @@ class VaultOperatorCharm(CharmBase):
             role_name: The role name to set the secret for
             role_id: The role ID to set in the secret
             role_secret_id: The role secret ID to set in the secret
-            id: Secret ID that should be updated
         """
         juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
-        return self._set_juju_secret(
-            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}, id=id
+        # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
+        # Until the reference bug is fixed we must pass the secret ID here
+        # not to lose the secret://modeluuid:secretID format
+        secret_id_from_peer_relation_data = self._get_vault_kv_secrets_in_peer_relation().get(
+            juju_secret_label
         )
+        secret = self._set_juju_secret(
+            juju_secret_label,
+            {"role-id": role_id, "role-secret-id": role_secret_id},
+            id=secret_id_from_peer_relation_data,
+        )
+        if secret.id is None:
+            raise RuntimeError(f"Unexpected error, created secret {juju_secret_label!r} has no id")
+        if secret.id != secret_id_from_peer_relation_data:
+            self._set_vault_kv_secret_in_peer_relation(juju_secret_label, secret.id)
+        return secret
+
+    def _set_vault_kv_secret_in_peer_relation(self, label: str, secret_id: str):
+        """Set the vault kv secret in the peer relation."""
+        if not self._is_peer_relation_created():
+            raise RuntimeError("Peer relation not created")
+        secrets = self._get_vault_kv_secrets_in_peer_relation()
+        secrets[label] = secret_id
+        relation = self.model.get_relation(PEER_RELATION_NAME)
+        relation.data[self.app].update({"vault-kv-secrets": json.dumps(secrets, sort_keys=True)})  # type: ignore[union-attr]  # noqa: E501
+
+    def _get_vault_kv_secrets_in_peer_relation(self) -> Dict[str, str]:
+        """Return the vault kv secrets from the peer relation."""
+        if not self._is_peer_relation_created():
+            raise RuntimeError("Peer relation not created")
+        relation = self.model.get_relation(PEER_RELATION_NAME)
+        secrets = json.loads(relation.data[self.app].get("vault-kv-secrets", "{}"))  # type: ignore[union-attr]  # noqa: E501
+        return secrets
 
     def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
         """Fetch the api address from relation and returns it.
