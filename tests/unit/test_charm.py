@@ -230,13 +230,13 @@ class TestCharm(unittest.TestCase):
         self.harness.set_leader()
         rel_id = self.harness.add_relation(relation_name, app_name)
         unit_name = app_name + "/0"
-        egress_subnet = "10.20.20.20/32"
+        egress_subnets = "10.20.20.20/32"
         self.harness.add_relation_unit(rel_id, unit_name)
         self.harness.update_relation_data(
-            rel_id, unit_name, {"egress_subnet": egress_subnet, "nonce": "0"}
+            rel_id, unit_name, {"egress_subnets": egress_subnets, "nonce": "0"}
         )
 
-        return (rel_id, egress_subnet)
+        return (rel_id, egress_subnets)
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
@@ -964,7 +964,7 @@ class TestCharm(unittest.TestCase):
         event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
         event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
         event.mount_suffix = "suffix"
-        event.egress_subnet = ["2.2.2.0/24"]
+        event.egress_subnets = ["2.2.2.0/24"]
         event.nonce = "123123"
 
         self.harness.charm._on_new_vault_kv_client_attached(event)
