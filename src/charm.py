@@ -605,7 +605,7 @@ class VaultOperatorCharm(CharmBase):
             app_name=event.app_name,
             unit_name=event.unit_name,
             mount_suffix=event.mount_suffix,
-            egress_subnet=event.egress_subnet,
+            egress_subnets=event.egress_subnets,
             nonce=event.nonce,
         )
 
@@ -872,7 +872,7 @@ class VaultOperatorCharm(CharmBase):
         app_name: str,
         unit_name: str,
         mount_suffix: str,
-        egress_subnet: str,
+        egress_subnets: List[str],
         nonce: str,
     ):
         if not self.unit.is_leader():
@@ -898,11 +898,11 @@ class VaultOperatorCharm(CharmBase):
         role_id = vault.configure_approle(
             role_name=role_name,
             policies=[policy_name],
-            cidrs=[egress_subnet],
+            cidrs=egress_subnets,
             token_ttl="1h",
             token_max_ttl="1h",
         )
-        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=egress_subnets)
         current_credentials = self.vault_kv.get_credentials(relation)
         # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
         # Until the reference bug is fixed we must pass the secret ID here
@@ -917,7 +917,7 @@ class VaultOperatorCharm(CharmBase):
         self.vault_kv.set_mount(relation, mount)
         self.vault_kv.set_ca_certificate(relation, ca_certificate)
         self.vault_kv.set_vault_url(relation, vault_url)
-        self.vault_kv.set_egress_subnet(relation, egress_subnet)
+        self.vault_kv.set_egress_subnets(relation, egress_subnets)
         self.vault_kv.set_unit_credentials(relation, nonce, secret)
         credential_nonces = self.vault_kv.get_credentials(relation).keys()
         if nonce not in set(credential_nonces):
@@ -993,7 +993,7 @@ class VaultOperatorCharm(CharmBase):
                 app_name=kv_request.app_name,
                 unit_name=kv_request.unit_name,
                 mount_suffix=kv_request.mount_suffix,
-                egress_subnet=kv_request.egress_subnet,
+                egress_subnets=kv_request.egress_subnets,
                 nonce=kv_request.nonce,
             )
 
