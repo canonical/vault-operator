@@ -235,6 +235,9 @@ class VaultOperatorCharm(CharmBase):
             self.vault_kv.on.new_vault_kv_client_attached, self._on_new_vault_kv_client_attached
         )
         self.framework.observe(
+            self.vault_kv.on.gone_away, self._on_vault_kv_relation_gone_away
+        )
+        self.framework.observe(
             self.on.tls_certificates_pki_relation_joined,
             self._on_tls_certificates_pki_relation_joined,
         )
@@ -605,7 +608,7 @@ class VaultOperatorCharm(CharmBase):
             app_name=event.app_name,
             unit_name=event.unit_name,
             mount_suffix=event.mount_suffix,
-            egress_subnet=event.egress_subnet,
+            egress_subnets=event.egress_subnets,
             nonce=event.nonce,
         )
 
@@ -872,7 +875,7 @@ class VaultOperatorCharm(CharmBase):
         app_name: str,
         unit_name: str,
         mount_suffix: str,
-        egress_subnet: str,
+        egress_subnets: List[str],
         nonce: str,
     ):
         if not self.unit.is_leader():
@@ -898,11 +901,11 @@ class VaultOperatorCharm(CharmBase):
         role_id = vault.configure_approle(
             role_name=role_name,
             policies=[policy_name],
-            cidrs=[egress_subnet],
+            cidrs=egress_subnets,
             token_ttl="1h",
             token_max_ttl="1h",
         )
-        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=[egress_subnet])
+        role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=egress_subnets)
         secret = self._create_or_update_kv_secret(
             role_name=role_name,
             role_id=role_id,
@@ -912,7 +915,7 @@ class VaultOperatorCharm(CharmBase):
         self.vault_kv.set_mount(relation, mount)
         self.vault_kv.set_ca_certificate(relation, ca_certificate)
         self.vault_kv.set_vault_url(relation, vault_url)
-        self.vault_kv.set_egress_subnet(relation, egress_subnet)
+        self.vault_kv.set_egress_subnets(relation, egress_subnets)
         self.vault_kv.set_unit_credentials(relation, nonce, secret)
         credential_nonces = self.vault_kv.get_credentials(relation).keys()
         if nonce not in set(credential_nonces):
@@ -971,6 +974,15 @@ class VaultOperatorCharm(CharmBase):
             self._set_vault_kv_secret_in_peer_relation(juju_secret_label, secret.id)
         return secret
 
+    # TODO Yazan
+    def _on_vault_kv_relation_gone_away(self, event):
+        mount = f"charm-{event.app_name}-{event.mount_suffix}"
+        unit_name_dash = event.unit_name.replace("/", "-")
+        role_name = f"{mount}-{unit_name_dash}"
+        juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
+        juju_secret = self.model.get_secret(label=juju_secret_label)
+        juju_secret.remove_all_revisions()
+
     def _set_vault_kv_secret_in_peer_relation(self, label: str, secret_id: str):
         """Set the vault kv secret in the peer relation."""
         if not self._is_peer_relation_created():
@@ -1016,7 +1028,7 @@ class VaultOperatorCharm(CharmBase):
                 app_name=kv_request.app_name,
                 unit_name=kv_request.unit_name,
                 mount_suffix=kv_request.mount_suffix,
-                egress_subnet=kv_request.egress_subnet,
+                egress_subnets=kv_request.egress_subnets,
                 nonce=kv_request.nonce,
             )
 
