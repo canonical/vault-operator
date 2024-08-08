@@ -974,7 +974,6 @@ class VaultOperatorCharm(CharmBase):
             self._set_vault_kv_secret_in_peer_relation(juju_secret_label, secret.id)
         return secret
 
-    # TODO Yazan
     def _on_vault_kv_relation_gone_away(self, event):
         mount = f"charm-{event.app_name}-{event.mount_suffix}"
         unit_name_dash = event.unit_name.replace("/", "-")
