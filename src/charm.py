@@ -436,7 +436,9 @@ class VaultOperatorCharm(CharmBase):
         if not vault:
             event.fail("Failed to initialize the Vault client")
             return
-        vault.authenticate(Token(token))
+        if not vault.authenticate(Token(token)):
+            event.fail("Failed to authenticate with Vault")
+            return
         try:
             vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
             vault.enable_approle_auth_method()
