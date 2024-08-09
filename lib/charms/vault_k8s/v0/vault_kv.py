@@ -256,7 +256,32 @@ def is_provider_data_valid(data: Mapping[str, str]) -> bool:
 class VaultKvGoneAwayEvent(ops.EventBase):
     """VaultKvGoneAwayEvent Event."""
 
-    pass
+    def __init__(
+        self,
+        handle: ops.Handle,
+        app_name: str,
+        unit_name: str,
+        mount_suffix: str,
+    ):
+        super().__init__(handle)
+        self.app_name = app_name
+        self.unit_name = unit_name
+        self.mount_suffix = mount_suffix
+
+    def snapshot(self) -> dict:
+        """Return snapshot data that should be persisted."""
+        return {
+            "app_name": self.app_name,
+            "unit_name": self.unit_name,
+            "mount_suffix": self.mount_suffix,
+        }
+
+    def restore(self, snapshot: Dict[str, Any]):
+        """Restore the value state from a given snapshot."""
+        super().restore(snapshot)
+        self.app_name = snapshot["app_name"]
+        self.unit_name = snapshot["unit_name"]
+        self.mount_suffix = snapshot["mount_suffix"]
 
 
 class NewVaultKvClientAttachedEvent(ops.EventBase):
@@ -358,7 +383,12 @@ class VaultKvProvides(ops.Object):
 
     def _on_vault_kv_relation_broken(self, event: ops.RelationBrokenEvent):
         """Handle relation broken."""
-        self.on.gone_away.emit()
+        for unit in event.relation.units:
+            self.on.gone_away.emit(
+                app_name=event.app.name,
+                unit_name=unit.name,
+                mount_suffix=event.relation.data[event.app]["mount_suffix"]
+            )
 
     def set_vault_url(self, relation: ops.Relation, vault_url: str):
         """Set the vault_url on the relation."""
