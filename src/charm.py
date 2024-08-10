@@ -36,7 +36,11 @@ from charms.vault_k8s.v0.vault_client import (
     Vault,
     VaultClientError,
 )
-from charms.vault_k8s.v0.vault_kv import NewVaultKvClientAttachedEvent, VaultKvProvides
+from charms.vault_k8s.v0.vault_kv import (
+    NewVaultKvClientAttachedEvent,
+    VaultKvClientDetachedEvent,
+    VaultKvProvides,
+)
 from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from charms.vault_k8s.v0.vault_tls import (
     File,
@@ -235,6 +239,9 @@ class VaultOperatorCharm(CharmBase):
             self.vault_kv.on.new_vault_kv_client_attached, self._on_new_vault_kv_client_attached
         )
         self.framework.observe(
+            self.vault_kv.on.vault_kv_client_detached, self._on_vault_kv_client_detached
+        )
+        self.framework.observe(
             self.on.tls_certificates_pki_relation_joined,
             self._on_tls_certificates_pki_relation_joined,
         )
@@ -265,6 +272,10 @@ class VaultOperatorCharm(CharmBase):
             self.vault_autounseal_requires.on.vault_autounseal_provider_relation_broken,
             self._configure,
         )
+
+    def _on_vault_kv_client_detached(self, event: VaultKvClientDetachedEvent):
+        label = self._get_vault_kv_secret_label(unit_name=event.unit_name)
+        self._remove_juju_secret_by_label(label=label)
 
     def _on_vault_autounseal_requirer_relation_broken(
         self, event: VaultAutounsealRequirerRelationBroken
@@ -777,7 +788,7 @@ class VaultOperatorCharm(CharmBase):
             event.fail(message="Failed to restore snapshot. Vault API returned an error.")
             return
 
-        self._remove_vault_approle_secret()
+        self._remove_juju_secret_by_label(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
 
         event.set_results({"restored": event.params.get("backup-id")})
 
@@ -905,14 +916,14 @@ class VaultOperatorCharm(CharmBase):
             token_max_ttl="1h",
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=egress_subnets)
-        current_credentials = self.vault_kv.get_credentials(relation)
         # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
         # Until the reference bug is fixed we must pass the secret ID here
         # not to lose the secret://modeluuid:secretID format
-        secret = self._create_or_update_kv_secret(
-            role_name=role_name,
-            role_id=role_id,
-            role_secret_id=role_secret_id,
+        current_credentials = self.vault_kv.get_credentials(relation)
+        juju_secret_label = self._get_vault_kv_secret_label(unit_name=unit_name)
+        secret = self._set_juju_secret(
+            label=juju_secret_label,
+            content={"role-id": role_id, "role-secret-id": role_secret_id},
             id=current_credentials.get(nonce, None),
         )
         secret.grant(relation)
@@ -946,26 +957,6 @@ class VaultOperatorCharm(CharmBase):
             return self.app.add_secret(content, label=label, description=description)
         secret.set_content(content)
         return secret
-
-    def _create_or_update_kv_secret(
-        self,
-        role_name: str,
-        role_id: str,
-        role_secret_id: str,
-        id: Optional[str] = None,
-    ) -> Secret:
-        """Create or update the KV secret for the relation.
-
-        Args:
-            role_name: The role name to set the secret for
-            role_id: The role ID to set in the secret
-            role_secret_id: The role secret ID to set in the secret
-            id: Secret ID that should be updated
-        """
-        juju_secret_label = f"{KV_SECRET_PREFIX}{role_name}"
-        return self._set_juju_secret(
-            juju_secret_label, {"role-id": role_id, "role-secret-id": role_secret_id}, id=id
-        )
 
     def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
         """Fetch the api address from relation and returns it.
@@ -1218,10 +1209,10 @@ class VaultOperatorCharm(CharmBase):
             return None
         return AppRole(role_id, secret_id)
 
-    def _remove_vault_approle_secret(self) -> None:
-        """Remove the approle secret if it exists."""
+    def _remove_juju_secret_by_label(self, label: str):
+        """Remove the specified secret if it exists."""
         try:
-            juju_secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+            juju_secret = self.model.get_secret(label=label)
             juju_secret.remove_all_revisions()
         except SecretNotFoundError:
             return
@@ -1405,6 +1396,10 @@ class VaultOperatorCharm(CharmBase):
         if not vaultd_service["active"]:
             return False
         return True
+
+    def _get_vault_kv_secret_label(self, unit_name: str):
+        unit_name_dash = unit_name.replace("/", "-")
+        return f"{KV_SECRET_PREFIX}{unit_name_dash}"
 
     @property
     def _bind_address(self) -> Optional[str]:

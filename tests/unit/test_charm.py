@@ -989,6 +989,50 @@ class TestCharm(unittest.TestCase):
             cidrs=["2.2.2.0/24"],
         )
 
+    @patch("ops.model.Model.get_binding")
+    @patch("ops.model.Secret.remove_all_revisions")
+    def test_given_kv_secret_when_vault_kv_client_detached_then_kv_secret_deleted(
+        self,
+        patch_remove_secret,
+        patch_get_binding,
+    ):
+        self.mock_vault_tls_manager.pull_tls_file_from_workload.return_value = "whatever ca cert"
+        self.mock_vault.configure_mock(
+            spec=Vault,
+            **{
+                "configure_approle.return_value": "12345678",
+                "generate_role_secret_id.return_value": "11111111",
+                "is_initialized.return_value": True,
+                "is_api_available.return_value": True,
+                "is_sealed.return_value": False,
+            },
+        )
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+        self.harness.charm.app.add_secret(
+            {"role-id": "role-id", "secret-id": "secret-id"},
+            label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+        )
+        self.harness.set_leader(is_leader=True)
+        rel_id, _ = self.setup_vault_kv_relation()
+        event = Mock()
+        event.relation_name = VAULT_KV_RELATION_NAME
+        event.relation_id = rel_id
+        event.app_name = VAULT_KV_REQUIRER_APPLICATION_NAME
+        event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
+        event.mount_suffix = "suffix"
+        event.egress_subnets = ["2.2.2.0/24"]
+        event.nonce = "123123"
+
+        self.harness.charm._on_new_vault_kv_client_attached(event)
+
+        kv_client_detached_event = Mock()
+        kv_client_detached_event.unit_name = f"{VAULT_KV_REQUIRER_APPLICATION_NAME}/0"
+        self.harness.charm._on_vault_kv_client_detached(kv_client_detached_event)
+        patch_remove_secret.assert_called()
+
     def test_given_s3_relation_not_created_when_create_backup_action_then_action_fails(self):
         self.harness.set_leader(is_leader=True)
 
