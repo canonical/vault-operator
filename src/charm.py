@@ -1222,7 +1222,7 @@ class VaultOperatorCharm(CharmBase):
         try:
             snap_cache = snap.SnapCache()
             vault_snap = snap_cache[VAULT_SNAP_NAME]
-            if vault_snap.latest:
+            if VAULT_SNAP_REVISION == vault_snap.revision:
                 return
             with self.temp_maintenance_status("Installing Vault"):
                 vault_snap.ensure(
@@ -1230,6 +1230,9 @@ class VaultOperatorCharm(CharmBase):
                 )
                 vault_snap.hold()
             logger.info("Vault snap installed")
+            if self._vault_service_is_running():
+                self.machine.restart(VAULT_SNAP_NAME)
+                logger.debug("Vault service restarted")
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
