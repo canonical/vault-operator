@@ -244,7 +244,7 @@ class TestCharm(unittest.TestCase):
         self, patch_get_binding: MagicMock
     ):
         self.harness.set_leader(is_leader=True)
-        vault_snap = MagicMock(spec=Snap, latest=False)
+        vault_snap = MagicMock(spec=Snap, revision="1.16/stable")
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
         self._set_peer_relation()
@@ -259,6 +259,51 @@ class TestCharm(unittest.TestCase):
             SnapState.Latest, channel="1.16/stable", revision="2300"
         )
         vault_snap.hold.assert_called()
+
+    @patch("charm.config_file_content_matches", new=Mock())
+    @patch("ops.model.Model.get_binding")
+    def test_given_vault_snap_old_snap_installed_when_configure_then_new_vault_snap_installed(
+        self, patch_get_binding: MagicMock
+    ):
+        self.harness.set_leader(is_leader=True)
+        vault_snap = MagicMock(spec=Snap, latest=True, revision="1.15/stable")
+        snap_cache = {"vault": vault_snap}
+        self.mock_snap_cache.return_value = snap_cache
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+
+        self.harness.charm.on.install.emit()
+
+        self.mock_snap_cache.assert_called_with()
+        vault_snap.ensure.assert_called_with(
+            SnapState.Latest, channel="1.16/stable", revision="2300"
+        )
+        vault_snap.hold.assert_called()
+
+    @patch("charm.config_file_content_matches", new=Mock())
+    @patch("ops.model.Model.get_binding")
+    def test_given_vault_snap_new_version_installed_when_configure_then_service_stopped(
+        self, patch_get_binding: MagicMock
+    ):
+        self.harness.set_leader(is_leader=True)
+        vault_snap = MagicMock(spec=Snap, latest=True, revision="1.16/stable")
+        snap_cache = {"vault": vault_snap}
+        self.mock_snap_cache.return_value = snap_cache
+        self._set_peer_relation()
+        patch_get_binding.return_value = MockBinding(
+            bind_address="1.2.1.2", ingress_address="2.3.2.3"
+        )
+
+        self.harness.charm.on.install.emit()
+
+        self.mock_snap_cache.assert_called_with()
+        vault_snap.ensure.assert_called_with(
+            SnapState.Latest, channel="1.16/stable", revision="2300"
+        )
+        vault_snap.hold.assert_called()
+        self.mock_machine.stop.assert_has_calls([call("vault")])
 
     @patch("ops.model.Model.get_binding")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(
