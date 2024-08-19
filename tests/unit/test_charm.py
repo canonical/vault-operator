@@ -284,7 +284,7 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    def test_given_vault_snap_new_version_installed_when_configure_then_service_restarted(
+    def test_given_vault_snap_new_version_installed_when_configure_then_service_stopped(
         self, patch_get_binding: MagicMock
     ):
         self.harness.set_leader(is_leader=True)
@@ -303,7 +303,7 @@ class TestCharm(unittest.TestCase):
             SnapState.Latest, channel="1.16/stable", revision="2300"
         )
         vault_snap.hold.assert_called()
-        self.mock_machine.restart.assert_has_calls([call("vault"), call("vault")])
+        self.mock_machine.stop.assert_has_calls([call("vault")])
 
     @patch("ops.model.Model.get_binding")
     def test_given_config_file_not_exists_when_configure_then_config_file_pushed(

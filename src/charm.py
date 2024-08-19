@@ -1231,8 +1231,8 @@ class VaultOperatorCharm(CharmBase):
                 vault_snap.hold()
             logger.info("Vault snap installed")
             if self._vault_service_is_running():
-                self.machine.restart(VAULT_SNAP_NAME)
-                logger.debug("Vault service restarted")
+                self.machine.stop(VAULT_SNAP_NAME)
+                logger.debug("Previously running Vault service stopped")
         except snap.SnapError as e:
             logger.error("An exception occurred when installing Vault. Reason: %s", str(e))
             raise e
