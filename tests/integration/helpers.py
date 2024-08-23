@@ -2,22 +2,163 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import logging
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import yaml
+from juju.application import Application
+from juju.errors import JujuError
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
+from vault import Vault
 
 # Vault status codes, see
 # https://developer.hashicorp.com/vault/api-docs/system/health for more details
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = METADATA["name"]
-VAULT_STATUS_ACTIVE = 200
-VAULT_STATUS_UNSEALED_AND_STANDBY = 429
-VAULT_STATUS_NOT_INITIALIZED = 501
-VAULT_STATUS_SEALED = 503
+SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
+VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
+
+
+def get_app(ops_test: OpsTest, app_name: str = APP_NAME) -> Application:
+    """Get the application by name.
+
+    Abstracts some of the boilerplate code needed to get the application by
+    caused by the type stubs being non-committal.
+    """
+    assert ops_test.model
+    app = ops_test.model.applications[app_name]
+    assert isinstance(app, Application)
+    return app
+
+
+def has_relation(app: Application, relation_name) -> bool:
+    """Check if the application has the relation with the given name.
+
+    This is a hack since `app.related_applications` does not seem to work.
+    """
+    for relation in app.relations:
+        for endpoint in relation.endpoints:
+            if endpoint.application_name != app.name:
+                continue
+            if endpoint.name == relation_name:
+                return True
+    return False
+
+
+async def get_ca_cert_file_location(ops_test: OpsTest, app_name: str = APP_NAME) -> Optional[str]:
+    """Get the location of the CA certificate file."""
+    assert ops_test.model
+    app = get_app(ops_test, app_name)
+    if not has_relation(app, "tls-certificates-access"):
+        return None
+    action_output = await run_get_ca_certificate_action(ops_test)
+    ca_certificate = action_output["ca-certificate"]
+    assert ca_certificate
+    ca_file_location = str(ops_test.tmp_path / f"ca_file_{app_name}.txt")
+    with open(ca_file_location, mode="w+") as ca_file:
+        ca_file.write(ca_certificate)
+    return ca_file_location
+
+
+async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) -> dict:
+    """Run the `get-certificate` on the `self-signed-certificates` unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+        timeout (int, optional): Timeout in seconds. Defaults to 60.
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    self_signed_certificates_unit = ops_test.model.units[
+        f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}/0"
+    ]
+    assert isinstance(self_signed_certificates_unit, Unit)
+    action = await self_signed_certificates_unit.run_action(
+        action_name="get-ca-certificate",
+    )
+    return await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=timeout)
+
+
+async def wait_fast_forward(ops_test: OpsTest, app_name, num_units=1, status=None) -> None:
+    assert ops_test.model
+    async with ops_test.fast_forward():
+        await ops_test.model.wait_for_idle(
+            apps=[app_name],
+            wait_for_exact_units=num_units,
+            timeout=1000,
+            status=status,
+        )
+
+
+async def get_leader(app: Application) -> Unit:
+    for unit in app.units:
+        assert isinstance(unit, Unit)
+        if await unit.is_leader_from_status():
+            return unit
+    raise Exception("Leader unit not found.")
+
+
+async def unseal_all_vault_units(
+    ops_test: OpsTest, ca_file_name: Optional[str], unseal_key: str
+) -> None:
+    """Unseal all the vault units."""
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+
+    # We need to unseal the leader first, since this is the one we initialized.
+    leader = await get_leader(app)
+    assert isinstance(leader, Unit)
+    unit_address = leader.public_address
+    assert unit_address
+    vault = Vault(url=f"https://{unit_address}:8200")
+    if vault.is_sealed():
+        vault.unseal(unseal_key)
+    vault.wait_for_node_to_be_unsealed()
+
+    for unit in app.units:
+        assert isinstance(unit, Unit)
+        unit_address = unit.public_address
+        assert unit_address
+        vault = Vault(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
+        if vault.is_sealed():
+            vault.unseal(unseal_key)
+        vault.wait_for_node_to_be_unsealed()
+
+
+async def run_get_certificate_action(ops_test: OpsTest) -> dict:
+    """Run `get-certificate` on the `tls-requirer-requirer/0` unit.
+
+    Args:
+        ops_test (OpsTest): OpsTest
+
+    Returns:
+        dict: Action output
+    """
+    assert ops_test.model
+    tls_requirer_unit = ops_test.model.units[f"{VAULT_PKI_REQUIRER_APPLICATION_NAME}/0"]
+    assert isinstance(tls_requirer_unit, Unit)
+    action = await tls_requirer_unit.run_action(
+        action_name="get-certificate",
+    )
+    action_output = await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=30)
+    return action_output
+
+
+async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
+    start_time = time.time()
+    timeout = 300
+    while time.time() - start_time < timeout:
+        action_output = await run_get_certificate_action(ops_test)
+        if action_output.get("certificate", None) is not None:
+            return
+        time.sleep(10)
+    raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 
 async def get_leader_unit(model, application_name: str) -> Unit:
@@ -86,3 +227,51 @@ async def wait_for_status_message(
     raise TimeoutError(
         f"`{app_name}` didn't show the expected status: `{expected_message}`. Last statuses: {unit_statuses}"
     )
+
+
+async def deploy_vault(ops_test: OpsTest, charm_path, num_vaults) -> None:
+    """Ensure the Vault charm is deployed."""
+    assert ops_test.model
+    if APP_NAME not in ops_test.model.applications:
+        try:
+            await ops_test.model.deploy(
+                charm_path,
+                application_name=APP_NAME,
+                num_units=num_vaults,
+            )
+        except JujuError as e:
+            assert "cannot add application" in str(e), f"Failed to deploy the Vault charm: `{e}`"
+            logging.warning("Failed to deploy the vault charm: `%s`", e)
+    else:
+        app = get_app(ops_test)
+        diff = num_vaults - len(app.units)
+        if diff > 0:
+            await app.add_units(count=diff)
+        elif diff < 0:
+            units = app.units[-diff:0]
+            await app.destroy_units([unit.name for unit in units])
+
+
+async def deploy_vault_and_wait(ops_test: OpsTest, charm_path, num_units) -> None:
+    await deploy_vault(ops_test, charm_path, num_units)
+    async with ops_test.fast_forward():
+        assert ops_test.model
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            wait_for_exact_units=num_units,
+            timeout=1000,
+        )
+
+
+async def get_leader_unit_address(ops_test: OpsTest) -> str:
+    """Get the address of the leader unit.
+
+    Returns:
+        Optional[str]: The address of the leader unit
+    """
+    assert ops_test.model
+    app = ops_test.model.applications[APP_NAME]
+    assert isinstance(app, Application)
+    leader = await get_leader(app)
+    assert leader and leader.public_address
+    return leader.public_address
