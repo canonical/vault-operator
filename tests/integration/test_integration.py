@@ -11,11 +11,11 @@ import pytest
 import yaml
 from cryptography import x509
 from juju.application import Application
-from juju.errors import JujuError
 from pytest_operator.plugin import OpsTest
 from vault import Vault
 
 from tests.integration.helpers import (
+    deploy_if_not_exists,
     deploy_vault_and_wait,
     get_app,
     get_ca_cert_file_location,
@@ -117,19 +117,7 @@ async def self_signed_certificates_idle(ops_test: OpsTest) -> Task:
 
     async def deploy_self_signed_certificates(ops_test: OpsTest) -> None:
         assert ops_test.model
-        if SELF_SIGNED_CERTIFICATES_APPLICATION_NAME not in ops_test.model.applications:
-            try:
-                await ops_test.model.deploy(
-                    SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
-                    application_name=SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
-                    num_units=1,
-                )
-            except JujuError as e:
-                assert "cannot add application" in str(
-                    e
-                ), f"Failed to deploy the self-signed-certificates charm: `{e}`"
-                logging.warning("Failed to deploy the self-signed-certficates charm: `%s`", e)
-        assert ops_test.model
+        await deploy_if_not_exists(ops_test.model, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME)
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(
                 apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
@@ -144,19 +132,9 @@ async def vault_kv_requirer_idle(ops_test: OpsTest, kv_requirer_charm_path: Path
 
     async def deploy_kv_requirer(ops_test: OpsTest) -> None:
         assert ops_test.model
-        if VAULT_KV_REQUIRER_APPLICATION_NAME not in ops_test.model.applications:
-            try:
-                await ops_test.model.deploy(
-                    kv_requirer_charm_path,
-                    application_name=VAULT_KV_REQUIRER_APPLICATION_NAME,
-                    num_units=1,
-                )
-            except JujuError as e:
-                assert "cannot add application" in str(
-                    e
-                ), f"Failed to deploy the vault-kv-requirer charm: `{e}`"
-                logging.warning("Failed to deploy the vault-kv-requirer charm: `%s`", e)
-
+        await deploy_if_not_exists(
+            ops_test.model, VAULT_KV_REQUIRER_APPLICATION_NAME, charm_path=kv_requirer_charm_path
+        )
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(
                 apps=[VAULT_KV_REQUIRER_APPLICATION_NAME],
@@ -171,25 +149,7 @@ async def vault_pki_requirer_idle(ops_test: OpsTest) -> Task:
 
     async def deploy_pki_requirer(ops_test: OpsTest):
         assert ops_test.model
-        if VAULT_PKI_REQUIRER_APPLICATION_NAME not in ops_test.model.applications:
-            try:
-                await ops_test.model.deploy(
-                    VAULT_PKI_REQUIRER_APPLICATION_NAME,
-                    application_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
-                    channel="stable",
-                    num_units=1,
-                    config={
-                        "common_name": f"test.{MATCHING_COMMON_NAME}",
-                        "sans_dns": f"test.{MATCHING_COMMON_NAME}",
-                    },
-                )
-            except JujuError as e:
-                assert "cannot add application" in str(
-                    e
-                ), f"Failed to deploy `{VAULT_PKI_REQUIRER_APPLICATION_NAME}`: `{e}`"
-                logging.warning(
-                    f"Failed to deploy `{VAULT_PKI_REQUIRER_APPLICATION_NAME}`: `%s`", e
-                )
+        await deploy_if_not_exists(ops_test.model, VAULT_PKI_REQUIRER_APPLICATION_NAME)
         await ops_test.model.wait_for_idle(
             apps=[VAULT_PKI_REQUIRER_APPLICATION_NAME],
         )
@@ -200,24 +160,9 @@ async def vault_pki_requirer_idle(ops_test: OpsTest) -> Task:
 @pytest.fixture(scope="module")
 async def grafana_deployed(ops_test: OpsTest) -> Task:
     """Deploy the `grafana-agent` charm."""
+    assert ops_test.model
 
-    async def deploy_grafana(ops_test: OpsTest):
-        assert ops_test.model
-        if GRAFANA_AGENT_APPLICATION_NAME not in ops_test.model.applications:
-            try:
-                await ops_test.model.deploy(
-                    GRAFANA_AGENT_APPLICATION_NAME,
-                    application_name=GRAFANA_AGENT_APPLICATION_NAME,
-                    channel="stable",
-                    num_units=1,
-                )
-            except JujuError as e:
-                assert "cannot add application" in str(
-                    e
-                ), f"Failed to deploy `{GRAFANA_AGENT_APPLICATION_NAME}`: `{e}`"
-                logging.warning(f"Failed to deploy `{GRAFANA_AGENT_APPLICATION_NAME}`: `%s`", e)
-
-    return create_task(deploy_grafana(ops_test))
+    return create_task(deploy_if_not_exists(ops_test.model, GRAFANA_AGENT_APPLICATION_NAME))
 
 
 @pytest.fixture(scope="module")
@@ -227,19 +172,7 @@ async def s3_integrator_idle(ops_test: OpsTest) -> Task:
     async def deploy_s3_integrator(ops_test: OpsTest):
         assert ops_test.model
 
-        if S3_INTEGRATOR_APPLICATION_NAME not in ops_test.model.applications:
-            try:
-                await ops_test.model.deploy(
-                    "s3-integrator",
-                    application_name=S3_INTEGRATOR_APPLICATION_NAME,
-                    trust=True,
-                    channel="stable",
-                )
-            except JujuError as e:
-                assert "cannot add application" in str(
-                    e
-                ), f"Failed to deploy the s3-integrator charm: `{e}`"
-                logging.warning("Failed to deploy the s3-integrator charm: `%s`", e)
+        await deploy_if_not_exists(ops_test.model, S3_INTEGRATOR_APPLICATION_NAME)
         await ops_test.model.wait_for_idle(
             apps=[S3_INTEGRATOR_APPLICATION_NAME],
         )
@@ -444,7 +377,7 @@ async def test_given_charm_deployed_then_status_blocked(ops_test: OpsTest, vault
     assert ops_test.model
     await vault_idle
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     assert vault_app.status == "blocked"
 
 
@@ -513,7 +446,7 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
 
     root_token, unseal_key = await vault_unsealed
     num_units = NUM_VAULT_UNITS + 1
-    app = get_app(ops_test)
+    app = get_app(ops_test.model)
     await app.add_unit(count=1)
 
     async with ops_test.fast_forward(fast_interval="10s"):
@@ -554,7 +487,7 @@ async def test_given_application_is_deployed_when_scale_down_then_status_is_acti
     await vault_authorized
     assert ops_test.model
 
-    new_unit = get_app(ops_test).units[-1]
+    new_unit = get_app(ops_test.model).units[-1]
     await new_unit.remove()
     async with ops_test.fast_forward(fast_interval="10s"):
         await ops_test.model.wait_for_idle(
@@ -597,7 +530,7 @@ async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_t
     await vault_authorized
     await vault_kv_requirer_idle
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     if not has_relation(vault_app, "vault-kv"):
         await ops_test.model.integrate(
             relation1=f"{APP_NAME}:vault-kv",
@@ -658,7 +591,7 @@ async def test_given_tls_certificates_pki_relation_when_integrate_then_status_is
     await vault_authorized
     await self_signed_certificates_idle
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     common_name = UNMATCHING_COMMON_NAME
     common_name_config = {
         "common_name": common_name,
@@ -732,29 +665,30 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
     root_token, _ = await vault_authorized
     await vault_pki_requirer_idle
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     common_name = MATCHING_COMMON_NAME
     common_name_config = {
         "common_name": common_name,
     }
     await vault_app.set_config(common_name_config)
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME],
-        status="active",
-        timeout=1000,
-        wait_for_exact_units=NUM_VAULT_UNITS,
-    )
-    await ops_test.model.wait_for_idle(
-        apps=[VAULT_PKI_REQUIRER_APPLICATION_NAME],
-        status="active",
-        timeout=1000,
-    )
-    await wait_for_status_message(
-        ops_test,
-        expected_message="Unit certificate is available",
-        app_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
-        count=1,
-    )
+    async with ops_test.fast_forward():
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            timeout=1000,
+            wait_for_exact_units=NUM_VAULT_UNITS,
+        )
+        await ops_test.model.wait_for_idle(
+            apps=[VAULT_PKI_REQUIRER_APPLICATION_NAME],
+            status="active",
+            timeout=1000,
+        )
+        await wait_for_status_message(
+            ops_test,
+            expected_message="Unit certificate is available",
+            app_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
+            count=1,
+        )
 
     leader_unit_address = await get_leader_unit_address(ops_test)
     assert leader_unit_address
@@ -781,7 +715,7 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
     await vault_authorized
     await s3_integrator_idle
 
-    s3_integrator = get_app(ops_test, S3_INTEGRATOR_APPLICATION_NAME)
+    s3_integrator = get_app(ops_test.model, S3_INTEGRATOR_APPLICATION_NAME)
     await run_s3_integrator_sync_credentials_action(
         ops_test,
         secret_key="Dummy secret key",
@@ -798,7 +732,7 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
         status="active",
         timeout=1000,
     )
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     if not has_relation(vault_app, "s3-parameters"):
         await ops_test.model.integrate(
             relation1=APP_NAME,
@@ -823,7 +757,7 @@ async def test_given_vault_integrated_with_s3_when_list_backups_then_action_fail
     await s3_integrator_idle
     assert ops_test.model
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     if not has_relation(vault_app, "s3-parameters"):
         await ops_test.model.integrate(
             relation1=APP_NAME,
@@ -857,7 +791,7 @@ async def test_given_vault_integrated_with_s3_when_restore_backup_then_action_fa
     await s3_integrator_idle
     await self_signed_certificates_idle
 
-    vault_app = get_app(ops_test)
+    vault_app = get_app(ops_test.model)
     if not has_relation(vault_app, "s3-parameters"):
         await ops_test.model.integrate(
             relation1=APP_NAME,

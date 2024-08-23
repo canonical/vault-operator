@@ -10,6 +10,7 @@ from typing import List, Optional
 import yaml
 from juju.application import Application
 from juju.errors import JujuError
+from juju.model import Model
 from juju.unit import Unit
 from pytest_operator.plugin import OpsTest
 from vault import Vault
@@ -22,14 +23,13 @@ SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 
 
-def get_app(ops_test: OpsTest, app_name: str = APP_NAME) -> Application:
+def get_app(model: Model, app_name: str = APP_NAME) -> Application:
     """Get the application by name.
 
     Abstracts some of the boilerplate code needed to get the application by
     caused by the type stubs being non-committal.
     """
-    assert ops_test.model
-    app = ops_test.model.applications[app_name]
+    app = model.applications[app_name]
     assert isinstance(app, Application)
     return app
 
@@ -51,7 +51,7 @@ def has_relation(app: Application, relation_name) -> bool:
 async def get_ca_cert_file_location(ops_test: OpsTest, app_name: str = APP_NAME) -> Optional[str]:
     """Get the location of the CA certificate file."""
     assert ops_test.model
-    app = get_app(ops_test, app_name)
+    app = get_app(ops_test.model, app_name)
     if not has_relation(app, "tls-certificates-access"):
         return None
     action_output = await run_get_ca_certificate_action(ops_test)
@@ -82,17 +82,6 @@ async def run_get_ca_certificate_action(ops_test: OpsTest, timeout: int = 60) ->
         action_name="get-ca-certificate",
     )
     return await ops_test.model.get_action_output(action_uuid=action.entity_id, wait=timeout)
-
-
-async def wait_fast_forward(ops_test: OpsTest, app_name, num_units=1, status=None) -> None:
-    assert ops_test.model
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[app_name],
-            wait_for_exact_units=num_units,
-            timeout=1000,
-            status=status,
-        )
 
 
 async def get_leader(app: Application) -> Unit:
@@ -232,24 +221,7 @@ async def wait_for_status_message(
 async def deploy_vault(ops_test: OpsTest, charm_path, num_vaults) -> None:
     """Ensure the Vault charm is deployed."""
     assert ops_test.model
-    if APP_NAME not in ops_test.model.applications:
-        try:
-            await ops_test.model.deploy(
-                charm_path,
-                application_name=APP_NAME,
-                num_units=num_vaults,
-            )
-        except JujuError as e:
-            assert "cannot add application" in str(e), f"Failed to deploy the Vault charm: `{e}`"
-            logging.warning("Failed to deploy the vault charm: `%s`", e)
-    else:
-        app = get_app(ops_test)
-        diff = num_vaults - len(app.units)
-        if diff > 0:
-            await app.add_units(count=diff)
-        elif diff < 0:
-            units = app.units[-diff:0]
-            await app.destroy_units([unit.name for unit in units])
+    await deploy_if_not_exists(ops_test.model, APP_NAME, charm_path, num_units=num_vaults)
 
 
 async def deploy_vault_and_wait(ops_test: OpsTest, charm_path, num_units) -> None:
@@ -275,3 +247,28 @@ async def get_leader_unit_address(ops_test: OpsTest) -> str:
     leader = await get_leader(app)
     assert leader and leader.public_address
     return leader.public_address
+
+
+async def deploy_if_not_exists(
+    model: Model, app_name: str, charm_path: Optional[Path] = None, num_units: int = 1
+) -> None:
+    if app_name not in model.applications:
+        try:
+            await model.deploy(
+                charm_path if charm_path else app_name,
+                application_name=app_name,
+                num_units=num_units,
+            )
+        except JujuError as e:
+            assert "cannot add application" in str(
+                e
+            ), f"Failed to deploy the `{app_name}` charm: `{e}`"
+            logging.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
+    else:
+        app = get_app(model)
+        diff = num_units - len(app.units)
+        if diff > 0:
+            await app.add_units(count=diff)
+        elif diff < 0:
+            units = app.units[-diff:0]
+            await app.destroy_units([unit.name for unit in units])
