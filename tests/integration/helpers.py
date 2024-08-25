@@ -250,7 +250,11 @@ async def get_leader_unit_address(ops_test: OpsTest) -> str:
 
 
 async def deploy_if_not_exists(
-    model: Model, app_name: str, charm_path: Optional[Path] = None, num_units: int = 1
+    model: Model,
+    app_name: str,
+    charm_path: Optional[Path] = None,
+    num_units: int = 1,
+    config: Optional[dict] = None,
 ) -> None:
     if app_name not in model.applications:
         try:
@@ -258,6 +262,7 @@ async def deploy_if_not_exists(
                 charm_path if charm_path else app_name,
                 application_name=app_name,
                 num_units=num_units,
+                config=config,
             )
         except JujuError as e:
             assert "cannot add application" in str(

@@ -149,7 +149,13 @@ async def vault_pki_requirer_idle(ops_test: OpsTest) -> Task:
 
     async def deploy_pki_requirer(ops_test: OpsTest):
         assert ops_test.model
-        await deploy_if_not_exists(ops_test.model, VAULT_PKI_REQUIRER_APPLICATION_NAME)
+        config = {
+            "common_name": f"test.{MATCHING_COMMON_NAME}",
+            "sans_dns": f"test.{MATCHING_COMMON_NAME}",
+        }
+        await deploy_if_not_exists(
+            ops_test.model, VAULT_PKI_REQUIRER_APPLICATION_NAME, config=config
+        )
         await ops_test.model.wait_for_idle(
             apps=[VAULT_PKI_REQUIRER_APPLICATION_NAME],
         )
