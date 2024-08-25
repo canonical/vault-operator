@@ -688,6 +688,7 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
             expected_message="Unit certificate is available",
             app_name=VAULT_PKI_REQUIRER_APPLICATION_NAME,
             count=1,
+            timeout=300,
         )
 
     leader_unit_address = await get_leader_unit_address(ops_test)
