@@ -5,7 +5,7 @@
 import logging
 from asyncio import Task, create_task, gather
 from pathlib import Path
-from typing import Any, Dict, Tuple, cast
+from typing import Any, Dict, Tuple
 
 import pytest
 import yaml
@@ -64,14 +64,7 @@ async def vault_idle(ops_test: OpsTest, request, vault_charm_path) -> Task:
 
     This is the default state of Vault.
     """
-    assert ops_test.model
-
-    num_vaults = cast(pytest.Mark, request.node.get_closest_marker("num_vaults"))
-    if num_vaults is None:
-        num_vaults = NUM_VAULT_UNITS
-    else:
-        num_vaults = num_vaults.args[0]
-    return create_task(deploy_vault_and_wait(ops_test, vault_charm_path, num_vaults))
+    return create_task(deploy_vault_and_wait(ops_test, vault_charm_path, NUM_VAULT_UNITS))
 
 
 @pytest.fixture(scope="function")
@@ -482,7 +475,6 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
 
 
 @pytest.mark.abort_on_fail
-@pytest.mark.num_vaults(4)
 @pytest.mark.dependency(
     depends=["test_given_application_is_deployed_when_scale_up_then_status_is_active"]
 )

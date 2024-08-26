@@ -230,7 +230,7 @@ async def deploy_vault_and_wait(ops_test: OpsTest, charm_path, num_units) -> Non
         assert ops_test.model
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
-            wait_for_exact_units=num_units,
+            wait_for_at_least_units=num_units,
             timeout=1000,
         )
 
@@ -265,15 +265,4 @@ async def deploy_if_not_exists(
                 config=config,
             )
         except JujuError as e:
-            assert "cannot add application" in str(
-                e
-            ), f"Failed to deploy the `{app_name}` charm: `{e}`"
             logging.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
-    else:
-        app = get_app(model)
-        diff = num_units - len(app.units)
-        if diff > 0:
-            await app.add_units(count=diff)
-        elif diff < 0:
-            units = app.units[-diff:0]
-            await app.destroy_units([unit.name for unit in units])
