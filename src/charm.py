@@ -49,11 +49,12 @@ from charms.vault_k8s.v0.vault_tls import (
 )
 from cryptography import x509
 from jinja2 import Environment, FileSystemLoader
-from machine import Machine
 from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
+
+from machine import Machine
 
 logger = logging.getLogger(__name__)
 

@@ -10,16 +10,6 @@ from unittest.mock import MagicMock, Mock, call, patch
 import hcl
 import ops
 import ops.testing
-from charm import (
-    MACHINE_TLS_FILE_DIRECTORY_PATH,
-    VAULT_CHARM_APPROLE_SECRET_LABEL,
-    VAULT_CHARM_POLICY_NAME,
-    VAULT_CHARM_POLICY_PATH,
-    VAULT_DEFAULT_POLICY_NAME,
-    VAULT_PKI_CSR_SECRET_LABEL,
-    VaultOperatorCharm,
-    config_file_content_matches,
-)
 from charms.operator_libs_linux.v2.snap import Snap, SnapState
 from charms.tls_certificates_interface.v3.tls_certificates import (
     CertificateAvailableEvent,
@@ -38,6 +28,17 @@ from charms.vault_k8s.v0.vault_client import (
 )
 from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from charms.vault_k8s.v0.vault_tls import CA_CERTIFICATE_JUJU_SECRET_LABEL, VaultTLSManager
+
+from charm import (
+    MACHINE_TLS_FILE_DIRECTORY_PATH,
+    VAULT_CHARM_APPROLE_SECRET_LABEL,
+    VAULT_CHARM_POLICY_NAME,
+    VAULT_CHARM_POLICY_PATH,
+    VAULT_DEFAULT_POLICY_NAME,
+    VAULT_PKI_CSR_SECRET_LABEL,
+    VaultOperatorCharm,
+    config_file_content_matches,
+)
 
 S3_LIB_PATH = "charms.data_platform_libs.v0.s3"
 PEER_RELATION_NAME = "vault-peers"
@@ -1270,9 +1271,9 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation(relation_name=S3_RELATION_NAME, remote_app="s3-integrator")
 
         action_output = self.harness.run_action("create-backup")
-        self.assertIn("backup-id", action_output.results)
+        assert "backup-id" in action_output.results
         backup_id = action_output.results["backup-id"]
-        self.assertIn(f"vault-backup-{self.model_name}", backup_id)
+        assert f"vault-backup-{self.model_name}" in backup_id
 
     def test_given_s3_relation_not_created_when_list_backup_action_then_action_fails(self):
         self.harness.set_leader(is_leader=True)
@@ -1365,7 +1366,7 @@ class TestCharm(unittest.TestCase):
 
         action_output = self.harness.run_action("list-backups")
 
-        self.assertIn("backup-ids", action_output.results)
+        assert "backup-ids" in action_output.results
         backup_ids = action_output.results["backup-ids"]
         self.assertEqual(backup_ids, json.dumps(["backup1", "backup2"]))
 
