@@ -138,11 +138,14 @@ pytest==8.3.2
     #   -c requirements.txt
     #   -r test-requirements.in
     #   pytest-asyncio
+    #   pytest-dependency
     #   pytest-operator
 pytest-asyncio==0.21.2
     # via
     #   -r test-requirements.in
     #   pytest-operator
+pytest-dependency==0.6.0
+    # via -r test-requirements.in
 pytest-operator==0.36.0
     # via -r test-requirements.in
 python-dateutil==2.9.0.post0
@@ -189,6 +192,7 @@ traitlets==5.14.3
 typing-extensions==4.12.2
     # via
     #   -c requirements.txt
+    #   ipython
     #   typing-inspect
 typing-inspect==0.9.0
     # via juju

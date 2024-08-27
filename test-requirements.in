@@ -3,6 +3,7 @@ coverage[toml]
 juju
 pyright
 pytest
-pytest-operator
 pytest-asyncio==0.21.2
+pytest-dependency
+pytest-operator
 ruff
