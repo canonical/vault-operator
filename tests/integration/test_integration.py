@@ -19,6 +19,7 @@ from tests.integration.helpers import (
     deploy_vault_and_wait,
     get_app,
     get_ca_cert_file_location,
+    get_juju_secret,
     get_leader,
     get_leader_unit,
     get_leader_unit_address,
@@ -311,12 +312,9 @@ async def initialize_vault_leader(ops_test: OpsTest, app_name: str) -> Tuple[str
         )
         return root_token, key
 
-    secrets = await ops_test.model.list_secrets(show_secrets=True)
-    secret = next(secret for secret in secrets if secret.label == f"root-token-key-{app_name}")
-    from base64 import b64decode
-
-    root_token = b64decode(secret.value.data["root-token"]).decode("utf-8")
-    key = b64decode(secret.value.data["key"]).decode("utf-8")
+    root_token, key = await get_juju_secret(
+        ops_test.model, label=f"root-token-key-{app_name}", fields=["root-token", "key"]
+    )
     return root_token, key
 
 

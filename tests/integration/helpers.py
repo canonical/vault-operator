@@ -4,6 +4,7 @@
 
 import logging
 import time
+from base64 import b64decode
 from pathlib import Path
 from typing import List, Optional
 
@@ -266,3 +267,10 @@ async def deploy_if_not_exists(
             )
         except JujuError as e:
             logging.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
+
+
+async def get_juju_secret(model: Model, label: str, fields: List[str]) -> List[str]:
+    secrets = await model.list_secrets(show_secrets=True)
+    secret = next(secret for secret in secrets if secret.label == label)
+
+    return [b64decode(secret.value.data[field]).decode("utf-8") for field in fields]
