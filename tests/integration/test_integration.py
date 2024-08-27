@@ -706,10 +706,9 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
 
 
 @pytest.mark.abort_on_fail
-async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fails(
+async def test_given_vault_integrated_with_s3_when_create_backup_then_action_succeeds(
     ops_test: OpsTest, vault_authorized: Task, s3_integrator_idle: Task
 ):
-    # TODO: Shouldn't this be then_action_succeeds?
     assert ops_test.model
     await vault_authorized
     await s3_integrator_idle
@@ -748,10 +747,9 @@ async def test_given_vault_integrated_with_s3_when_create_backup_then_action_fai
 
 
 @pytest.mark.abort_on_fail
-async def test_given_vault_integrated_with_s3_when_list_backups_then_action_fails(
+async def test_given_vault_integrated_with_s3_when_list_backups_then_action_succeeds(
     ops_test: OpsTest, vault_authorized: Task, s3_integrator_idle: Task
 ):
-    # TODO: Shouldn't this be then_action_succeeds?
     await vault_authorized
     await s3_integrator_idle
     assert ops_test.model
@@ -778,13 +776,12 @@ async def test_given_vault_integrated_with_s3_when_list_backups_then_action_fail
 
 
 @pytest.mark.abort_on_fail
-async def test_given_vault_integrated_with_s3_when_restore_backup_then_action_fails(
+async def test_given_vault_integrated_with_s3_when_restore_backup_then_action_succeeds(
     ops_test: OpsTest,
     vault_authorized: Task,
     s3_integrator_idle: Task,
     self_signed_certificates_idle: Task,
 ):
-    # TODO: Shouldn't this be then_action_succeeds?
     assert ops_test.model
     await vault_authorized
     await s3_integrator_idle
