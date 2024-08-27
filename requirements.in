@@ -9,6 +9,7 @@ psutil
 pyhcl
 pyopenssl
 pytest-interface-tester
-pydantic
+pydantic==2.8.2
+rpds-py==0.18.0
 # vault_client requirements
 hvac

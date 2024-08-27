@@ -97,8 +97,9 @@ referencing==0.35.1
     #   jsonschema-specifications
 requests==2.32.3
     # via hvac
-rpds-py==0.20.0
+rpds-py==0.18.0
     # via
+    #   -r requirements.in
     #   jsonschema
     #   referencing
 s3transfer==0.10.2
