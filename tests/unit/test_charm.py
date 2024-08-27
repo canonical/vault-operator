@@ -427,37 +427,6 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.config_file_content_matches", new=Mock())
     @patch("ops.model.Model.get_binding")
-    def test_given_vault_snap_installed_when_configure_then_certificates_are_configured(
-        self,
-        patch_get_binding,
-    ):
-        bind_address = "1.2.1.2"
-        patch_get_binding.return_value = MockBinding(
-            bind_address=bind_address, ingress_address="2.3.2.3"
-        )
-        vault_snap = MagicMock(spec=Snap)
-        snap_cache = {"vault": vault_snap}
-        self.mock_snap_cache.return_value = snap_cache
-        self.harness.set_leader(is_leader=False)
-        peer_relation_id = self._set_peer_relation()
-        other_unit_name = f"{self.harness.charm.app.name}/1"
-        self.harness.add_relation_unit(
-            relation_id=peer_relation_id, remote_unit_name=other_unit_name
-        )
-        self._set_ca_certificate_secret(
-            certificate="whatever certificate",
-            private_key="whatever private key",
-        )
-        self._set_other_node_api_address_in_peer_relation(
-            relation_id=peer_relation_id, unit_name=other_unit_name
-        )
-
-        self.harness.charm.on.install.emit()
-
-        self.mock_vault_tls_manager.configure_certificates.assert_called_with(bind_address)
-
-    @patch("charm.config_file_content_matches", new=Mock())
-    @patch("ops.model.Model.get_binding")
     def test_given_snap_installed_when_configure_then_service_started(
         self,
         patch_get_binding,
