@@ -8,6 +8,7 @@
 import datetime
 import json
 import logging
+import socket
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -48,11 +49,12 @@ from charms.vault_k8s.v0.vault_tls import (
 )
 from cryptography import x509
 from jinja2 import Environment, FileSystemLoader
-from machine import Machine
 from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
+
+from machine import Machine
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +216,9 @@ class VaultOperatorCharm(CharmBase):
             workload=self.machine,
             service_name=VAULT_SNAP_NAME,
             tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
+            common_name=self._bind_address if self._bind_address else "",
+            sans_dns=frozenset([socket.getfqdn()]),
+            sans_ip=frozenset([self._bind_address] if self._bind_address else []),
         )
         self.vault_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.vault_pki = TLSCertificatesProvidesV3(self, PKI_RELATION_NAME)
@@ -572,7 +577,6 @@ class VaultOperatorCharm(CharmBase):
                 return
             if not self.tls.ca_certificate_is_saved():
                 return
-        self.tls.configure_certificates(self._bind_address)
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
@@ -581,7 +585,6 @@ class VaultOperatorCharm(CharmBase):
         self._sync_vault_autounseal()
         self._sync_vault_kv()
         self._sync_vault_pki()
-        self.tls.send_ca_cert()
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
             return
