@@ -26,8 +26,8 @@ VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 def get_app(model: Model, app_name: str = APP_NAME) -> Application:
     """Get the application by name.
 
-    Abstracts some of the boilerplate code needed to get the application by
-    caused by the type stubs being non-committal.
+    Abstracts some of the boilerplate code needed to get the application caused
+    by the type stubs in pytest_operator being non-committal.
     """
     app = model.applications[app_name]
     assert isinstance(app, Application)
