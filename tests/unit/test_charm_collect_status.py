@@ -44,12 +44,12 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
     def test_given_bind_address_not_available_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        self.mock_get_binding.return_value = None
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
         )
         state_in = scenario.State(
             relations=[peer_relation],
+            networks={"vault-peers": scenario.Network.default(private_address="")},
         )
 
         state_out = self.ctx.run("collect_unit_status", state_in)

@@ -5,7 +5,7 @@
 
 import scenario
 
-from tests.unit.fixtures import MockBinding, VaultCharmFixtures
+from tests.unit.fixtures import VaultCharmFixtures
 
 
 class TestCharmAutounsealRelationBroken(VaultCharmFixtures):
@@ -16,10 +16,6 @@ class TestCharmAutounsealRelationBroken(VaultCharmFixtures):
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
             },
-        )
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="myhostname",
-            ingress_address="myhostname",
         )
         autounseal_relation = scenario.Relation(
             endpoint="vault-autounseal-provides",

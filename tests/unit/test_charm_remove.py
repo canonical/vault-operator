@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call
 
 import scenario
 
-from tests.unit.fixtures import MockBinding, VaultCharmFixtures
+from tests.unit.fixtures import VaultCharmFixtures
 
 
 class TestCharmRemove(VaultCharmFixtures):
@@ -22,10 +22,6 @@ class TestCharmRemove(VaultCharmFixtures):
                 "is_node_in_raft_peers.return_value": True,
                 "get_num_raft_peers.return_value": 4,
             },
-        )
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="myhostname",
-            ingress_address="myhostname",
         )
         model_name = "model-name"
         approle_secret = scenario.Secret(
@@ -68,10 +64,6 @@ class TestCharmRemove(VaultCharmFixtures):
                 "is_node_in_raft_peers.return_value": True,
                 "get_num_raft_peers.return_value": 4,
             },
-        )
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="myhostname",
-            ingress_address="myhostname",
         )
         model_name = "model-name"
         approle_secret = scenario.Secret(

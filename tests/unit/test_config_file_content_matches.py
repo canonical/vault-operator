@@ -3,9 +3,7 @@
 # See LICENSE file for licensing details.
 
 
-from charm import (
-    config_file_content_matches,
-)
+from charm import config_file_content_matches
 
 
 def read_file(path: str) -> str:

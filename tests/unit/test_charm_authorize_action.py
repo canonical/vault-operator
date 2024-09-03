@@ -6,7 +6,7 @@
 import scenario
 from charms.vault_k8s.v0.vault_client import AuditDeviceType
 
-from tests.unit.fixtures import MockBinding, VaultCharmFixtures
+from tests.unit.fixtures import VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures):
@@ -46,7 +46,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "get_token_data.return_value": None,
             },
         )
-        self.mock_get_binding.return_value = None
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
@@ -55,6 +54,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         state_in = scenario.State(
             leader=True,
             secrets=[approle_secret],
+            networks={"vault-peers": scenario.Network.default(private_address="")},
         )
         action = scenario.Action(
             name="authorize-charm",
@@ -72,10 +72,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "tls_file_available_in_charm.return_value": False,
             },
         )
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="myhostname",
-            ingress_address="myhostname",
-        )
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
@@ -88,6 +84,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation],
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
         action = scenario.Action(
             name="authorize-charm",
@@ -110,10 +107,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "generate_role_secret_id.return_value": "my-secret-id",
             },
         )
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.3.4",
-            ingress_address="1.2.3.4",
-        )
         user_provided_secret = scenario.Secret(
             id="0",
             contents={0: {"token": "my token"}},
@@ -125,6 +118,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
             leader=True,
             secrets=[user_provided_secret],
             relations=[peer_relation],
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
         action = scenario.Action(
             name="authorize-charm",

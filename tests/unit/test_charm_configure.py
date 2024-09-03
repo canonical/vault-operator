@@ -5,7 +5,7 @@
 
 import datetime
 from io import StringIO
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import hcl
 import scenario
@@ -18,12 +18,41 @@ from charms.vault_k8s.v0.vault_autounseal import AutounsealDetails
 from charms.vault_k8s.v0.vault_client import AppRole, Certificate, SecretsBackend
 from charms.vault_k8s.v0.vault_kv import KVRequest
 
-from tests.unit.fixtures import MockBinding, VaultCharmFixtures
+from tests.unit.fixtures import VaultCharmFixtures
 
 
 class MockRelation:
+    """Mock class for Relation used in Autounseal tests.
+
+    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
+    """
+
     def __init__(self, id: int):
         self.id = id
+
+
+class MockNetwork:
+    """Mock class for Relation used in Autounseal tests.
+
+    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
+    """
+
+    def __init__(self, bind_address: str, ingress_address: str):
+        self.bind_address = bind_address
+        self.ingress_address = ingress_address
+
+
+class MockBinding:
+    """Mock class for Relation used in Autounseal tests.
+
+    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
+    """
+
+    def __init__(self, bind_address: str, ingress_address: str):
+        self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
 
 
 class TestCharmConfigure(VaultCharmFixtures):
@@ -31,10 +60,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_socket_fqdn.return_value = "myhostname"
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.1.2",
-            ingress_address="1.2.1.2",
-        )
         model_name = "whatever"
 
         peer_relation = scenario.PeerRelation(
@@ -44,6 +69,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             leader=True,
             relations=[peer_relation],
             model=scenario.Model(name=model_name),
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config-changed", state_in)
@@ -58,10 +84,6 @@ class TestCharmConfigure(VaultCharmFixtures):
     def test_given_leader_when_configure_then_vault_service_is_started(self):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.1.2",
-            ingress_address="1.2.1.2",
-        )
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
@@ -71,6 +93,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         state_in = scenario.State(
             leader=True,
             relations=[peer_relation],
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config_changed", state_in)
@@ -94,10 +117,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_pki_requirer_get_assigned_certificates.return_value = []
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.1.2",
-            ingress_address="1.2.1.2",
-        )
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
         )
@@ -115,6 +134,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation],
             config={"common_name": "myhostname.com"},
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config_changed", state_in)
@@ -148,10 +168,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.1.2",
-            ingress_address="1.2.1.2",
-        )
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
         )
@@ -186,6 +202,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             secrets=[approle_secret, csr_secret],
             relations=[peer_relation, pki_relation],
             config={"common_name": "myhostname.com"},
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config_changed", state_in)
@@ -225,10 +242,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_get_binding.return_value = MockBinding(
-            bind_address="1.2.1.2",
-            ingress_address="1.2.1.2",
-        )
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
         )
@@ -272,6 +285,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation_provider, pki_relation_requirer],
             config={"common_name": "myhostname.com"},
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config_changed", state_in)
@@ -292,8 +306,9 @@ class TestCharmConfigure(VaultCharmFixtures):
 
     # Test Auto unseal
 
+    @patch("ops.model.Model.get_binding")
     def test_given_autounseal_details_available_when_configure_then_transit_stanza_generated(
-        self,
+        self, mock_get_binding
     ):
         key_name = "my key"
         approle_id = "my approle id"
@@ -332,7 +347,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="vault-autounseal",
             remote_app_name="vault-autounseal-requirer",
         )
-        self.mock_get_binding.return_value = MockBinding(
+        mock_get_binding.return_value = MockBinding(
             bind_address="myhostname",
             ingress_address="myhostname",
         )
@@ -363,8 +378,9 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_vault.authenticate.assert_called_with(AppRole("role id", "secret id"))
         self.mock_tls.push_autounseal_ca_cert.assert_called_with("ca cert")
 
+    @patch("ops.model.Model.get_binding")
     def test_given_outstanding_autounseal_requests_when_configure_then_credentials_are_set(
-        self,
+        self, mock_get_binding
     ):
         key_name = "my key"
         approle_id = "my approle id"
@@ -400,7 +416,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="vault-autounseal",
             remote_app_name="vault-autounseal-requirer",
         )
-        self.mock_get_binding.return_value = MockBinding(
+        mock_get_binding.return_value = MockBinding(
             bind_address="myhostname",
             ingress_address="myhostname",
         )
@@ -416,6 +432,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             secrets=[approle_secret],
             relations=[peer_relation, vault_autounseal_relation],
             config={"common_name": "myhostname.com"},
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
 
         self.ctx.run("config_changed", state_in)

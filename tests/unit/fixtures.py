@@ -45,7 +45,6 @@ class VaultCharmFixtures:
     patcher_kv_provides_set_egress_subnets = patch("charm.VaultKvProvides.set_egress_subnets")
     patcher_kv_provides_set_vault_url = patch("charm.VaultKvProvides.set_vault_url")
     patcher_kv_provides_get_credentials = patch("charm.VaultKvProvides.get_credentials")
-    patcher_get_binding = patch("ops.model.Model.get_binding")
     patcher_snap_cache = patch("charm.snap.SnapCache")
     patcher_machine = patch("charm.Machine")
     patcher_get_common_name_from_csr = patch("charm.get_common_name_from_csr")
@@ -93,7 +92,6 @@ class VaultCharmFixtures:
         self.mock_kv_provides_get_credentials = (
             VaultCharmFixtures.patcher_kv_provides_get_credentials.start()
         )
-        self.mock_get_binding = VaultCharmFixtures.patcher_get_binding.start()
         self.mock_snap_cache = VaultCharmFixtures.patcher_snap_cache.start()
         self.mock_machine = VaultCharmFixtures.patcher_machine.start().return_value
         self.mock_get_common_name_from_csr = (
@@ -105,14 +103,3 @@ class VaultCharmFixtures:
         self.ctx = scenario.Context(
             charm_type=VaultOperatorCharm,
         )
-
-
-class MockNetwork:
-    def __init__(self, bind_address: str, ingress_address: str):
-        self.bind_address = bind_address
-        self.ingress_address = ingress_address
-
-
-class MockBinding:
-    def __init__(self, bind_address: str, ingress_address: str):
-        self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
