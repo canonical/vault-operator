@@ -111,7 +111,9 @@ async def self_signed_certificates_idle(ops_test: OpsTest) -> Task:
 
     async def deploy_self_signed_certificates(ops_test: OpsTest) -> None:
         assert ops_test.model
-        await deploy_if_not_exists(ops_test.model, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME)
+        await deploy_if_not_exists(
+            ops_test.model, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME, channel="edge"
+        )
         async with ops_test.fast_forward():
             await ops_test.model.wait_for_idle(
                 apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
