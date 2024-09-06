@@ -1062,27 +1062,29 @@ class VaultOperatorCharm(CharmBase):
         if not certificate_request:
             logger.error("Certificate request is not valid")
             return
-        intermediate_ca_certificate, private_key = self.tls_certificates_pki.get_assigned_certificate(
-            certificate_request=certificate_request
+        intermediate_ca_certificate, private_key = (
+            self.tls_certificates_pki.get_assigned_certificate(
+                certificate_request=certificate_request
+            )
         )
-        if not provider_certificate:
-            logger.debug("No certificate available")
+        if not intermediate_ca_certificate:
+            logger.debug("Intermediate CA certificate available")
             return
         if not private_key:
-            logger.debug("No private key available")
+            logger.debug("Private key for intermediate CA not available")
             return
         vault.enable_secrets_engine(SecretsBackend.PKI, VAULT_PKI_MOUNT)
         existing_ca_certificate = vault.get_intermediate_ca(mount=VAULT_PKI_MOUNT)
         if (
             existing_ca_certificate
             and Certificate.from_string(existing_ca_certificate)
-            == provider_certificate.certificate
+            == intermediate_ca_certificate.certificate
         ):
             logger.debug("CA certificate already set in the PKI secrets engine")
             return
         self.vault_pki.revoke_all_certificates()
         vault.import_ca_certificate_and_key(
-            certificate=str(provider_certificate.certificate),
+            certificate=str(intermediate_ca_certificate.certificate),
             private_key=str(private_key),
             mount=VAULT_PKI_MOUNT,
         )
