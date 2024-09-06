@@ -3,21 +3,22 @@
 # See LICENSE file for licensing details.
 
 
-import datetime
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import hcl
 import scenario
 from charms.operator_libs_linux.v2.snap import Snap
-from charms.tls_certificates_interface.v3.tls_certificates import (
-    ProviderCertificate,
-    RequirerCSR,
-)
+from charms.tls_certificates_interface.v4.tls_certificates import ProviderCertificate
 from charms.vault_k8s.v0.vault_autounseal import AutounsealDetails
 from charms.vault_k8s.v0.vault_client import AppRole, Certificate, SecretsBackend
 from charms.vault_k8s.v0.vault_kv import KVRequest
 
+from tests.unit.certificates import (
+    generate_example_provider_certificate,
+    generate_example_requirer_csr,
+    sign_certificate,
+)
 from tests.unit.fixtures import VaultCharmFixtures
 
 
@@ -102,7 +103,9 @@ class TestCharmConfigure(VaultCharmFixtures):
 
     # PKI
 
-    def test_given_vault_active_when_configure_then_pki_secrets_engine_is_configured(self):
+    def test_given_certificate_available_when_configure_then_pki_secrets_engine_is_configured(
+        self,
+    ):
         self.mock_vault.configure_mock(
             **{
                 "is_api_available.return_value": True,
@@ -110,11 +113,10 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_initialized.return_value": True,
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
-                "generate_pki_intermediate_ca_csr.return_value": "my csr",
                 "get_intermediate_ca.return_value": "",
+                "is_common_name_allowed_in_pki_role.return_value": False,
             },
         )
-        self.mock_pki_requirer_get_assigned_certificates.return_value = []
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = scenario.PeerRelation(
@@ -136,79 +138,23 @@ class TestCharmConfigure(VaultCharmFixtures):
             config={"common_name": "myhostname.com"},
             networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
+        provider_certificate, private_key = generate_example_provider_certificate(
+            common_name="myhostname.com",
+            relation_id=pki_relation.relation_id,
+        )
+        self.mock_pki_requirer_get_assigned_certificate.return_value = (
+            provider_certificate,
+            private_key,
+        )
 
         self.ctx.run("config_changed", state_in)
 
         self.mock_vault.enable_secrets_engine.assert_called_once_with(
             SecretsBackend.PKI, "charm-pki"
         )
-        self.mock_vault.generate_pki_intermediate_ca_csr.assert_called_once_with(
-            mount="charm-pki",
-            common_name="myhostname.com",
-        )
-        self.mock_pki_requirer_request_certificate_creation.assert_called_once_with(
-            certificate_signing_request="my csr".encode(),
-            is_ca=True,
-        )
-
-    def test_given_vault_is_available_when_configure_then_certificate_added_to_vault_pki_and_latest_issuer_set_to_default(
-        self,
-    ):
-        self.mock_vault.configure_mock(
-            **{
-                "is_api_available.return_value": True,
-                "authenticate.return_value": True,
-                "is_initialized.return_value": True,
-                "is_sealed.return_value": False,
-                "is_active_or_standby.return_value": True,
-                "generate_pki_intermediate_ca_csr.return_value": "my csr",
-                "is_common_name_allowed_in_pki_role.return_value": False,
-                "get_intermediate_ca.return_value": "",
-            },
-        )
-        self.mock_autounseal_requires_get_details.return_value = None
-        self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
-            endpoint="vault-peers",
-        )
-        pki_relation = scenario.Relation(
-            endpoint="tls-certificates-pki",
-            interface="tls-certificates",
-        )
-        provider_certificate = ProviderCertificate(
-            relation_id=pki_relation.relation_id,
-            application_name="tls-provider",
-            expiry_time=datetime.datetime.now(),
-            certificate="my certificate",
-            chain=["my ca"],
-            csr="my csr",
-            ca="my ca",
-            revoked=False,
-        )
-        self.mock_pki_requirer_get_assigned_certificates.return_value = [provider_certificate]
-        approle_secret = scenario.Secret(
-            id="0",
-            label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
-        )
-        csr_secret = scenario.Secret(
-            id="1",
-            label="pki-csr",
-            contents={0: {"csr": "my csr"}},
-            owner="app",
-        )
-        state_in = scenario.State(
-            leader=True,
-            secrets=[approle_secret, csr_secret],
-            relations=[peer_relation, pki_relation],
-            config={"common_name": "myhostname.com"},
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
-        )
-
-        self.ctx.run("config_changed", state_in)
-
-        self.mock_vault.set_pki_intermediate_ca_certificate.assert_called_once_with(
-            certificate=provider_certificate.certificate,
+        self.mock_vault.import_ca_certificate_and_key.assert_called_once_with(
+            certificate=str(provider_certificate.certificate),
+            private_key=str(private_key),
             mount="charm-pki",
         )
         self.mock_vault.make_latest_pki_issuer_default.assert_called_once_with(
@@ -223,23 +169,6 @@ class TestCharmConfigure(VaultCharmFixtures):
     def test_given_vault_available_when_configure_then_certificate_is_provided(
         self,
     ):
-        self.mock_vault.configure_mock(
-            **{
-                "is_api_available.return_value": True,
-                "authenticate.return_value": True,
-                "is_initialized.return_value": True,
-                "is_sealed.return_value": False,
-                "is_active_or_standby.return_value": True,
-                "generate_pki_intermediate_ca_csr.return_value": "my csr",
-                "is_common_name_allowed_in_pki_role.return_value": False,
-                "get_intermediate_ca.return_value": "",
-                "sign_pki_certificate_signing_request.return_value": Certificate(
-                    certificate="my certificate",
-                    ca="my ca",
-                    chain=["my ca"],
-                ),
-            },
-        )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = scenario.PeerRelation(
@@ -255,26 +184,27 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="tls-certificates",
             remote_app_name="tls-requirer",
         )
-        provider_certificate = ProviderCertificate(
-            relation_id=pki_relation_provider.relation_id,
-            application_name="tls-provider",
-            expiry_time=datetime.datetime.now(),
-            certificate="my certificate",
-            chain=["my ca"],
-            csr="my csr",
-            ca="my ca",
-            revoked=False,
+        assigned_provider_certificate, assigned_private_key = (
+            generate_example_provider_certificate(
+                common_name="myhostname.com",
+                relation_id=pki_relation_provider.relation_id,
+            )
         )
-        requirer_csr = RequirerCSR(
+        requirer_csr = generate_example_requirer_csr(
+            common_name="subdomain.myhostname.com",
             relation_id=pki_relation_requirer.relation_id,
-            application_name="tls-requirer",
-            unit_name="tls-requirer/0",
-            csr="requirer csr",
-            is_ca=False,
         )
-        self.mock_pki_requirer_get_assigned_certificates.return_value = [provider_certificate]
+
+        self.mock_pki_requirer_get_assigned_certificate.return_value = (
+            assigned_provider_certificate,
+            assigned_private_key,
+        )
         self.mock_pki_provider_get_outstanding_certificate_requests.return_value = [requirer_csr]
-        self.mock_get_common_name_from_csr.return_value = "subdomain.myhostname.com"
+        vault_generated_certificate = sign_certificate(
+            ca_certificate=assigned_provider_certificate.certificate,
+            ca_private_key=assigned_private_key,
+            csr=requirer_csr.certificate_signing_request,
+        )
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
@@ -287,21 +217,39 @@ class TestCharmConfigure(VaultCharmFixtures):
             config={"common_name": "myhostname.com"},
             networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
         )
+        self.mock_vault.configure_mock(
+            **{
+                "is_api_available.return_value": True,
+                "authenticate.return_value": True,
+                "is_initialized.return_value": True,
+                "is_sealed.return_value": False,
+                "is_active_or_standby.return_value": True,
+                "get_intermediate_ca.return_value": "",
+                "is_common_name_allowed_in_pki_role.return_value": False,
+                "sign_pki_certificate_signing_request.return_value": Certificate(
+                    certificate=str(vault_generated_certificate),
+                    ca=str(assigned_provider_certificate.certificate),
+                    chain=[str(assigned_provider_certificate.certificate)],
+                ),
+            },
+        )
 
         self.ctx.run("config_changed", state_in)
 
         self.mock_vault.sign_pki_certificate_signing_request.assert_called_once_with(
             mount="charm-pki",
             role="charm-pki",
-            csr=requirer_csr.csr,
+            csr=str(requirer_csr.certificate_signing_request),
             common_name="subdomain.myhostname.com",
         )
         self.mock_pki_provider_set_relation_certificate.assert_called_once_with(
-            relation_id=pki_relation_requirer.relation_id,
-            certificate="my certificate",
-            ca="my ca",
-            certificate_signing_request=requirer_csr.csr,
-            chain=["my ca"],
+            provider_certificate=ProviderCertificate(
+                relation_id=pki_relation_requirer.relation_id,
+                certificate=vault_generated_certificate,
+                ca=assigned_provider_certificate.certificate,
+                chain=[assigned_provider_certificate.certificate],
+                certificate_signing_request=requirer_csr.certificate_signing_request,
+            ),
         )
 
     # Test Auto unseal
@@ -321,7 +269,6 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_initialized.return_value": True,
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
-                "generate_pki_intermediate_ca_csr.return_value": "my csr",
                 "is_common_name_allowed_in_pki_role.return_value": False,
                 "create_autounseal_credentials.return_value": (
                     key_name,
@@ -392,7 +339,6 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_initialized.return_value": True,
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
-                "generate_pki_intermediate_ca_csr.return_value": "my csr",
                 "is_common_name_allowed_in_pki_role.return_value": False,
                 "create_autounseal_credentials.return_value": (
                     key_name,
