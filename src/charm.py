@@ -1062,7 +1062,7 @@ class VaultOperatorCharm(CharmBase):
         if not certificate_request:
             logger.error("Certificate request is not valid")
             return
-        provider_certificate, private_key = self.tls_certificates_pki.get_assigned_certificate(
+        intermediate_ca_certificate, private_key = self.tls_certificates_pki.get_assigned_certificate(
             certificate_request=certificate_request
         )
         if not provider_certificate:
