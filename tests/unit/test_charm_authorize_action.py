@@ -41,11 +41,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         )
 
     def test_given_api_address_unavailable_when_authorize_charm_then_fails(self):
-        self.mock_vault.configure_mock(
-            **{
-                "get_token_data.return_value": None,
-            },
-        )
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
@@ -102,7 +97,6 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
         self.mock_vault.configure_mock(
             **{
-                "get_token_data.return_value": "token data",
                 "configure_approle.return_value": "my-role-id",
                 "generate_role_secret_id.return_value": "my-secret-id",
             },
