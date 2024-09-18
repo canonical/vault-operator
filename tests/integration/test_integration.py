@@ -47,6 +47,7 @@ VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
 
 MATCHING_COMMON_NAME = "example.com"
 UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
+VAULT_PKI_REQUIRER_REVISION = 93
 
 
 @pytest.fixture(scope="session")
@@ -150,7 +151,11 @@ async def vault_pki_requirer_idle(ops_test: OpsTest) -> Task:
             "sans_dns": f"test.{MATCHING_COMMON_NAME}",
         }
         await deploy_if_not_exists(
-            ops_test.model, VAULT_PKI_REQUIRER_APPLICATION_NAME, config=config
+            ops_test.model,
+            VAULT_PKI_REQUIRER_APPLICATION_NAME,
+            config=config,
+            revision=VAULT_PKI_REQUIRER_REVISION,
+            channel="stable",
         )
         await ops_test.model.wait_for_idle(
             apps=[VAULT_PKI_REQUIRER_APPLICATION_NAME],
