@@ -9,7 +9,7 @@ psutil
 pyhcl
 pyopenssl
 pytest-interface-tester
-ops-scenario==6.1.7
-rpds-py==0.18.1
+ops-scenario==7.0.4
+rpds-py==0.20.0
 # vault_client requirements
 hvac
