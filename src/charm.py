@@ -669,7 +669,7 @@ class VaultOperatorCharm(CharmBase):
             return
         response = vault.create_snapshot()
         content_uploaded = s3.upload_content(
-            content=response.raw,
+            content=response.raw,  # type: ignore[reportArgumentType]
             bucket_name=s3_parameters["bucket"],
             key=backup_key,
         )
