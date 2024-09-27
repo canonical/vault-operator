@@ -11,7 +11,7 @@ import logging
 import socket
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
@@ -114,7 +114,7 @@ def _render_vault_config_file(
     raft_storage_path: str,
     node_id: str,
     retry_joins: List[Dict[str, str]],
-    autounseal_details: Optional[AutounsealConfigurationDetails] = None,
+    autounseal_details: AutounsealConfigurationDetails | None = None,
 ) -> str:
     jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR_PATH))
     template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
@@ -299,7 +299,7 @@ class VaultOperatorCharm(CharmBase):
             return
         vault.destroy_autounseal_credentials(event.relation.id, AUTOUNSEAL_MOUNT_PATH)
 
-    def _get_active_vault_client(self) -> Optional[Vault]:
+    def _get_active_vault_client(self) -> Vault | None:
         """Return an initialized vault client.
 
         Returns:
@@ -395,7 +395,7 @@ class VaultOperatorCharm(CharmBase):
             ca_cert,
         )
 
-    def generate_vault_scrape_configs(self) -> Optional[List[Dict]]:
+    def generate_vault_scrape_configs(self) -> List[Dict] | None:
         """Generate the scrape configs for the COS agent.
 
         Returns:
@@ -828,7 +828,7 @@ class VaultOperatorCharm(CharmBase):
         if vault.is_node_in_raft_peers(node_id=self._node_id) and vault.get_num_raft_peers() > 1:
             vault.remove_raft_node(node_id=self._node_id)
 
-    def _check_s3_pre_requisites(self) -> Optional[str]:
+    def _check_s3_pre_requisites(self) -> str | None:
         """Check if the S3 pre-requisites are met."""
         if not self.unit.is_leader():
             return "Only leader unit can perform backup operations"
@@ -931,8 +931,8 @@ class VaultOperatorCharm(CharmBase):
         self,
         label: str,
         content: Dict[str, str],
-        description: Optional[str] = None,
-        id: Optional[str] = None,
+        description: str | None = None,
+        id: str | None = None,
     ) -> Secret:
         """Set the secret content at `label`, overwrite if it already exists.
 
@@ -949,7 +949,7 @@ class VaultOperatorCharm(CharmBase):
         secret.set_content(content)
         return secret
 
-    def _get_relation_api_address(self, relation: Relation) -> Optional[str]:
+    def _get_relation_api_address(self, relation: Relation) -> str | None:
         """Fetch the api address from relation and returns it.
 
         Example: "https://10.152.183.20:8200"
@@ -1142,7 +1142,7 @@ class VaultOperatorCharm(CharmBase):
         """
         return bool(self.model.get_relation(relation_name))
 
-    def _get_vault_approle(self) -> Optional[AppRole]:
+    def _get_vault_approle(self) -> AppRole | None:
         """Get the approle details from the secret.
 
         Returns:
@@ -1200,7 +1200,7 @@ class VaultOperatorCharm(CharmBase):
         vault_snap.start(services=["vaultd"])
         logger.debug("Vault service started")
 
-    def _get_autounseal_configuration(self) -> Optional[AutounsealConfigurationDetails]:
+    def _get_autounseal_configuration(self) -> AutounsealConfigurationDetails | None:
         """Retrieve the autounseal configuration details, if available.
 
         Returns the autounseal configuration details if all the required
@@ -1244,7 +1244,7 @@ class VaultOperatorCharm(CharmBase):
             self._set_juju_secret(AUTOUNSEAL_TOKEN_SECRET_LABEL, {"token": vault.token})
         return vault.token
 
-    def _get_juju_secret_field(self, label: str, field: str) -> Optional[str]:
+    def _get_juju_secret_field(self, label: str, field: str) -> str | None:
         """Retrieve the latest revision of the secret content from Juju.
 
         Args:
@@ -1355,7 +1355,7 @@ class VaultOperatorCharm(CharmBase):
         return f"{KV_SECRET_PREFIX}{unit_name_dash}"
 
     @property
-    def _bind_address(self) -> Optional[str]:
+    def _bind_address(self) -> str | None:
         """Fetches bind address from peer relation and returns it.
 
         Returns:
@@ -1373,7 +1373,7 @@ class VaultOperatorCharm(CharmBase):
             return None
 
     @property
-    def _api_address(self) -> Optional[str]:
+    def _api_address(self) -> str | None:
         """Returns the IP with the https schema and vault port.
 
         Example: "https://1.2.3.4:8200"
@@ -1383,7 +1383,7 @@ class VaultOperatorCharm(CharmBase):
         return f"https://{self._bind_address}:{VAULT_PORT}"
 
     @property
-    def _cluster_address(self) -> Optional[str]:
+    def _cluster_address(self) -> str | None:
         """Return the IP with the https schema and vault port.
 
         Example: "https://1.2.3.4:8201"

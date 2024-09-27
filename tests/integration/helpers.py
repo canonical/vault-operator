@@ -6,7 +6,7 @@ import logging
 import time
 from base64 import b64decode
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import yaml
 from juju.application import Application
@@ -49,7 +49,7 @@ def has_relation(app: Application, relation_name) -> bool:
     return False
 
 
-async def get_ca_cert_file_location(ops_test: OpsTest, app_name: str = APP_NAME) -> Optional[str]:
+async def get_ca_cert_file_location(ops_test: OpsTest, app_name: str = APP_NAME) -> str | None:
     """Get the location of the CA certificate file."""
     assert ops_test.model
     app = get_app(ops_test.model, app_name)
@@ -94,7 +94,7 @@ async def get_leader(app: Application) -> Unit:
 
 
 async def unseal_all_vault_units(
-    ops_test: OpsTest, ca_file_name: Optional[str], unseal_key: str
+    ops_test: OpsTest, ca_file_name: str | None, unseal_key: str
 ) -> None:
     """Unseal all the vault units."""
     assert ops_test.model
@@ -237,11 +237,6 @@ async def deploy_vault_and_wait(ops_test: OpsTest, charm_path, num_units) -> Non
 
 
 async def get_leader_unit_address(ops_test: OpsTest) -> str:
-    """Get the address of the leader unit.
-
-    Returns:
-        Optional[str]: The address of the leader unit
-    """
     assert ops_test.model
     app = ops_test.model.applications[APP_NAME]
     assert isinstance(app, Application)
@@ -253,11 +248,11 @@ async def get_leader_unit_address(ops_test: OpsTest) -> str:
 async def deploy_if_not_exists(
     model: Model,
     app_name: str,
-    charm_path: Optional[Path] = None,
+    charm_path: Path | None = None,
     num_units: int = 1,
-    config: Optional[dict] = None,
-    channel: Optional[str] = None,
-    revision: Optional[int] = None,
+    config: dict | None = None,
+    channel: str | None = None,
+    revision: int | None = None,
 ) -> None:
     if app_name not in model.applications:
         try:
