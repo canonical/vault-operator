@@ -7,7 +7,7 @@
 import logging
 import time
 from os.path import abspath
-from typing import Optional, Tuple
+from typing import Tuple
 
 import hvac
 
@@ -20,9 +20,7 @@ VAULT_STATUS_NOT_INITIALIZED = 501
 
 
 class Vault:
-    def __init__(
-        self, url: str, ca_file_location: Optional[str] = None, token: Optional[str] = None
-    ):
+    def __init__(self, url: str, ca_file_location: str | None = None, token: str | None = None):
         self.url = url
         verify = abspath(ca_file_location) if ca_file_location else False
         self.client = hvac.Client(url=self.url, verify=verify)

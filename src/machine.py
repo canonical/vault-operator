@@ -9,7 +9,7 @@ import os
 import shutil
 import signal
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TextIO
 
 import psutil
 from charms.operator_libs_linux.v2 import snap
@@ -110,7 +110,7 @@ class Machine(WorkloadBase):
             os.kill(pid, signal.SIGTERM)
             logger.info("Stopped process %s", process)
 
-    def get_service(self, process: str) -> Optional[psutil.Process]:
+    def get_service(self, process: str) -> psutil.Process | None:
         """Get a service.
 
         Args:
@@ -123,7 +123,7 @@ class Machine(WorkloadBase):
             return psutil.Process(pid)
         return None
 
-    def _find_process(self, process: str) -> Optional[int]:
+    def _find_process(self, process: str) -> int | None:
         """Find a process.
 
         Args:
