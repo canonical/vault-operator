@@ -3,17 +3,17 @@
 # See LICENSE file for licensing details.
 
 
-import scenario
-from ops.testing import ActionFailed
+import ops.testing as testing
 import pytest
 from charms.vault_k8s.v0.vault_client import AuditDeviceType
+from ops.testing import ActionFailed
 
 from tests.unit.fixtures import VaultCharmFixtures
 
 
 class TestCharmAuthorizeAction(VaultCharmFixtures):
     def test_given_unit_not_leader_when_authorize_cham_action_then_fails(self):
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=False,
         )
 
@@ -22,13 +22,19 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         assert e.value.message == "This action can only be run by the leader unit"
 
     def test_given_secret_id_not_found_when_authorize_charm_then_fails(self):
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
         )
 
         with pytest.raises(ActionFailed) as e:
-            self.ctx.run(self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"}), state_in)
-        assert e.value.message == "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
+            self.ctx.run(
+                self.ctx.on.action("authorize-charm", params={"secret-id": "my secret id"}),
+                state_in,
+            )
+        assert (
+            e.value.message
+            == "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
+        )
 
     def test_given_api_address_unavailable_when_authorize_charm_then_fails(self):
         self.mock_vault.configure_mock(
@@ -36,23 +42,26 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "authenticate.return_value": False,
             },
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             secrets=[approle_secret],
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("")])],
                 )
             },
         )
 
         with pytest.raises(ActionFailed) as e:
-            self.ctx.run(self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}), state_in)
+            self.ctx.run(
+                self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}),
+                state_in,
+            )
         assert e.value.message == "API address is not available."
 
     def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
@@ -61,28 +70,33 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "tls_file_available_in_charm.return_value": False,
             },
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation],
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
 
         with pytest.raises(ActionFailed) as e:
-            self.ctx.run(self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}), state_in)
-        assert e.value.message == "CA certificate is not available in the charm. Something is wrong."
+            self.ctx.run(
+                self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}),
+                state_in,
+            )
+        assert (
+            e.value.message == "CA certificate is not available in the charm. Something is wrong."
+        )
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
         self.mock_vault.configure_mock(
@@ -92,24 +106,27 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "generate_role_secret_id.return_value": "my-secret-id",
             },
         )
-        user_provided_secret = scenario.Secret(
+        user_provided_secret = testing.Secret(
             tracked_content={"token": "my token"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             secrets=[user_provided_secret],
             relations=[peer_relation],
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
-        out_state = self.ctx.run(self.ctx.on.action("authorize-charm", params={"secret-id": user_provided_secret.id}), state_in)
+        out_state = self.ctx.run(
+            self.ctx.on.action("authorize-charm", params={"secret-id": user_provided_secret.id}),
+            state_in,
+        )
 
         self.mock_vault.enable_audit_device.assert_called_once_with(
             device_type=AuditDeviceType.FILE, path="stdout"

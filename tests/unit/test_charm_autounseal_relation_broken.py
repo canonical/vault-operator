@@ -3,7 +3,7 @@
 # See LICENSE file for licensing details.
 
 
-import scenario
+import ops.testing as testing
 
 from tests.unit.fixtures import VaultCharmFixtures
 
@@ -17,19 +17,19 @@ class TestCharmAutounsealRelationBroken(VaultCharmFixtures):
                 "is_active_or_standby.return_value": True,
             },
         )
-        autounseal_relation = scenario.Relation(
+        autounseal_relation = testing.Relation(
             endpoint="vault-autounseal-provides",
             interface="vault-autounseal",
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[autounseal_relation, peer_relation],
             secrets=[approle_secret],

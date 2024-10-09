@@ -5,7 +5,7 @@
 
 from unittest.mock import MagicMock
 
-import scenario
+import ops.testing as testing
 from charms.operator_libs_linux.v2.snap import Snap
 from charms.vault_k8s.v0.vault_client import VaultClientError
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
@@ -17,11 +17,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
     def test_given_tls_relation_and_bad_common_name_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        tls_relation = scenario.Relation(
+        tls_relation = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             config={"common_name": ""},
             relations=[tls_relation],
         )
@@ -33,7 +33,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         )
 
     def test_given_peer_relation_not_created_when_collect_unit_status_then_status_is_waiting(self):
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[],
         )
 
@@ -44,15 +44,15 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
     def test_given_bind_address_not_available_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("")])],
                 )
             },
         )
@@ -64,10 +64,10 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
     def test_given_non_leader_and_unit_address_not_available_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
         )
 
@@ -85,7 +85,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -93,7 +93,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -111,7 +111,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_available_in_charm.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -119,7 +119,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -140,7 +140,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_available_in_charm.return_value": True,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -148,7 +148,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -176,7 +176,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "is_api_available.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -184,7 +184,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -214,7 +214,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "is_seal_type_transit.return_value": True,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -222,7 +222,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -252,7 +252,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "is_seal_type_transit.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -260,7 +260,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -294,7 +294,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "needs_migration.return_value": True,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -302,7 +302,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -334,7 +334,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -342,7 +342,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -374,7 +374,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -382,7 +382,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -416,7 +416,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -424,7 +424,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation],
             planned_units=3,
         )
@@ -458,7 +458,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
@@ -466,15 +466,15 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 3: {"node_api_address": "1.2.3.6"},
             },
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="1",
             label="vault-approle-auth-details",
             tracked_content={
                 "role-id": "existing role id",
-                "secret-id": "existing secret id",  
+                "secret-id": "existing secret id",
             },
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             relations=[peer_relation], planned_units=3, secrets=[approle_secret]
         )
 

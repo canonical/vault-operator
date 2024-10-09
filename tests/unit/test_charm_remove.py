@@ -5,7 +5,7 @@
 
 from unittest.mock import MagicMock, call
 
-import scenario
+import ops.testing as testing
 
 from tests.unit.fixtures import VaultCharmFixtures
 
@@ -24,17 +24,17 @@ class TestCharmRemove(VaultCharmFixtures):
             },
         )
         model_name = "model-name"
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             secrets=[approle_secret],
-            model=scenario.Model(name=model_name),
+            model=testing.Model(name=model_name),
             relations=[peer_relation],
         )
 
@@ -66,16 +66,16 @@ class TestCharmRemove(VaultCharmFixtures):
             },
         )
         model_name = "model-name"
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             secrets=[approle_secret],
-            model=scenario.Model(name=model_name),
+            model=testing.Model(name=model_name),
             relations=[peer_relation],
         )
 

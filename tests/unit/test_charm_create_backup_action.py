@@ -3,27 +3,29 @@
 # See LICENSE file for licensing details.
 
 
-import scenario
-from ops.testing import ActionFailed
+import ops.testing as testing
 import pytest
-
 from charms.vault_k8s.v0.vault_s3 import S3Error
+from ops.testing import ActionFailed
 
 from tests.unit.fixtures import VaultCharmFixtures
 
 
 class TestCharmCreateBackupAction(VaultCharmFixtures):
     def test_given_non_leader_when_create_backup_action_then_fails(self):
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=False,
         )
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(self.ctx.on.action("create-backup"), state_in)
 
-        assert e.value.message == "S3 pre-requisites not met. Only leader unit can perform backup operations."
+        assert (
+            e.value.message
+            == "S3 pre-requisites not met. Only leader unit can perform backup operations."
+        )
 
     def test_given_s3_relation_not_created_when_create_backup_action_then_fails(self):
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
         )
         with pytest.raises(ActionFailed) as e:
@@ -32,11 +34,11 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
         assert e.value.message == "S3 pre-requisites not met. S3 relation not created."
 
     def test_given_missing_s3_parameters_when_create_backup_then_action_fails(self):
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation],
         )
@@ -61,11 +63,11 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
             },
         )
         self.mock_s3.side_effect = S3Error()
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation],
         )
@@ -91,11 +93,11 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
                 "create_bucket.return_value": None,
             },
         )
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation],
         )
@@ -116,11 +118,11 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
                 },
             },
         )
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation],
         )
@@ -152,19 +154,19 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
                 "is_active_or_standby.return_value": True,
             },
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation, peer_relation],
             secrets=[approle_secret],
@@ -197,19 +199,19 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
                 "is_active_or_standby.return_value": True,
             },
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        s3_relation = scenario.Relation(
+        s3_relation = testing.Relation(
             endpoint="s3-parameters",
             interface="s3",
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             leader=True,
             relations=[s3_relation, peer_relation],
             secrets=[approle_secret],
@@ -220,4 +222,4 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
         self.mock_vault.create_snapshot.assert_called()
         self.mock_s3.return_value.upload_content.assert_called()
         print(self.ctx.action_results)
-        #assert "backup-id" in self.ctx.action_results
+        # assert "backup-id" in self.ctx.action_results

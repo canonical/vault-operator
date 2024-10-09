@@ -7,7 +7,7 @@ from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import hcl
-import scenario
+import ops.testing as testing
 from charms.operator_libs_linux.v2.snap import Snap
 from charms.tls_certificates_interface.v4.tls_certificates import ProviderCertificate
 from charms.vault_k8s.v0.vault_autounseal import AutounsealDetails
@@ -63,18 +63,18 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_machine.pull.return_value = StringIO("")
         model_name = "whatever"
 
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             relations=[peer_relation],
-            model=scenario.Model(name=model_name),
+            model=testing.Model(name=model_name),
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
@@ -94,17 +94,17 @@ class TestCharmConfigure(VaultCharmFixtures):
         vault_snap = MagicMock(spec=Snap)
         snap_cache = {"vault": vault_snap}
         self.mock_snap_cache.return_value = snap_cache
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             relations=[peer_relation],
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
@@ -131,28 +131,28 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        pki_relation = scenario.Relation(
+        pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation],
             config={"common_name": "myhostname.com"},
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
@@ -189,15 +189,15 @@ class TestCharmConfigure(VaultCharmFixtures):
     ):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        pki_relation_provider = scenario.Relation(
+        pki_relation_provider = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
             remote_app_name="tls-provider",
         )
-        pki_relation_requirer = scenario.Relation(
+        pki_relation_requirer = testing.Relation(
             endpoint="vault-pki",
             interface="tls-certificates",
             remote_app_name="tls-requirer",
@@ -223,21 +223,21 @@ class TestCharmConfigure(VaultCharmFixtures):
             ca_private_key=assigned_private_key,
             csr=requirer_csr.certificate_signing_request,
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation_provider, pki_relation_requirer],
             config={"common_name": "myhostname.com"},
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
@@ -310,10 +310,10 @@ class TestCharmConfigure(VaultCharmFixtures):
             "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
         )
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        vault_autounseal_relation = scenario.Relation(
+        vault_autounseal_relation = testing.Relation(
             endpoint="vault-autounseal-provides",
             interface="vault-autounseal",
             remote_app_name="vault-autounseal-requirer",
@@ -324,13 +324,13 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, vault_autounseal_relation],
@@ -379,10 +379,10 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        vault_autounseal_relation = scenario.Relation(
+        vault_autounseal_relation = testing.Relation(
             endpoint="vault-autounseal-provides",
             interface="vault-autounseal",
             remote_app_name="vault-autounseal-requirer",
@@ -393,21 +393,21 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, vault_autounseal_relation],
             config={"common_name": "myhostname.com"},
             networks={
-                scenario.Network(
+                testing.Network(
                     "vault-peers",
-                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
         )
@@ -442,20 +442,20 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        kv_relation = scenario.Relation(
+        kv_relation = testing.Relation(
             endpoint="vault-kv",
             interface="vault-kv",
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret],
@@ -502,19 +502,19 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        kv_relation = scenario.Relation(
+        kv_relation = testing.Relation(
             endpoint="vault-kv",
             interface="vault-kv",
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        kv_secret = scenario.Secret(
+        kv_secret = testing.Secret(
             id="1",
             label="kv-creds-vault-kv-remote-0",
             tracked_content={
@@ -523,8 +523,8 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
             owner="app",
         )
-        state_in = scenario.State(
-            unit_status=scenario.ActiveStatus(),
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret, kv_secret],
@@ -547,4 +547,3 @@ class TestCharmConfigure(VaultCharmFixtures):
             "role-id": "kv role id",
             "role-secret-id": "new kv role secret id",
         }
-
