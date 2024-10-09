@@ -139,7 +139,6 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="tls-certificates",
         )
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
@@ -224,7 +223,6 @@ class TestCharmConfigure(VaultCharmFixtures):
             csr=requirer_csr.certificate_signing_request,
         )
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
@@ -325,7 +323,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
@@ -394,7 +391,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
@@ -450,7 +446,6 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="vault-kv",
         )
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
@@ -510,12 +505,10 @@ class TestCharmConfigure(VaultCharmFixtures):
             interface="vault-kv",
         )
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         kv_secret = testing.Secret(
-            id="1",
             label="kv-creds-vault-kv-remote-0",
             tracked_content={
                 "role-id": "kv role id",

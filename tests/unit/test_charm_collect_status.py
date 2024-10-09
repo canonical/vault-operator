@@ -467,7 +467,6 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            id="1",
             label="vault-approle-auth-details",
             tracked_content={
                 "role-id": "existing role id",

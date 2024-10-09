@@ -135,7 +135,6 @@ class TestCharmListBackupAction(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            id="0",
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
