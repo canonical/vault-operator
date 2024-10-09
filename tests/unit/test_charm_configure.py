@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 
+from datetime import timedelta
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -158,6 +159,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         provider_certificate, private_key = generate_example_provider_certificate(
             common_name="myhostname.com",
             relation_id=pki_relation.id,
+            validity=timedelta(hours=24),
         )
         self.mock_pki_requirer_get_assigned_certificate.return_value = (
             provider_certificate,
@@ -177,10 +179,12 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_vault.make_latest_pki_issuer_default.assert_called_once_with(
             mount="charm-pki",
         )
+        expected_ttl = int(timedelta(hours=12).total_seconds())
         self.mock_vault.create_or_update_pki_charm_role.assert_called_once_with(
             allowed_domains="myhostname.com",
             mount="charm-pki",
             role="charm-pki",
+            max_ttl=f"{expected_ttl}s",
         )
 
     def test_given_vault_available_when_configure_then_certificate_is_provided(
@@ -205,6 +209,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             generate_example_provider_certificate(
                 common_name="myhostname.com",
                 relation_id=pki_relation_provider.id,
+                validity=timedelta(hours=24),
             )
         )
         requirer_csr = generate_example_requirer_csr(
@@ -258,11 +263,13 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
+        expected_ttl = int(timedelta(hours=12).total_seconds())
         self.mock_vault.sign_pki_certificate_signing_request.assert_called_once_with(
             mount="charm-pki",
             role="charm-pki",
             csr=str(requirer_csr.certificate_signing_request),
             common_name="subdomain.myhostname.com",
+            ttl=f"{expected_ttl}s",
         )
         self.mock_pki_provider_set_relation_certificate.assert_called_once_with(
             provider_certificate=ProviderCertificate(
@@ -272,6 +279,70 @@ class TestCharmConfigure(VaultCharmFixtures):
                 chain=[assigned_provider_certificate.certificate],
                 certificate_signing_request=requirer_csr.certificate_signing_request,
             ),
+        )
+
+    def test_given_pki_intermediate_certificate_inactive_when_configure_then_certificate_is_renewed(
+        self,
+    ):
+        self.mock_vault.configure_mock(
+            **{
+                "is_api_available.return_value": True,
+                "authenticate.return_value": True,
+                "is_initialized.return_value": True,
+                "is_sealed.return_value": False,
+                "is_active_or_standby.return_value": True,
+                "get_intermediate_ca.return_value": "",
+                "is_common_name_allowed_in_pki_role.return_value": False,
+            },
+        )
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        peer_relation = scenario.PeerRelation(
+            endpoint="vault-peers",
+        )
+        pki_relation = scenario.Relation(
+            endpoint="tls-certificates-pki",
+            interface="tls-certificates",
+        )
+        approle_secret = scenario.Secret(
+            id="0",
+            label="vault-approle-auth-details",
+            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+        )
+        state_in = scenario.State(
+            leader=True,
+            secrets=[approle_secret],
+            relations=[peer_relation, pki_relation],
+            config={"common_name": "myhostname.com"},
+            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+        )
+        provider_certificate, private_key = generate_example_provider_certificate(
+            common_name="myhostname.com",
+            relation_id=pki_relation.relation_id,
+            validity=timedelta(hours=24),
+        )
+        self.mock_pki_requirer_get_assigned_certificate.return_value = (
+            provider_certificate,
+            private_key,
+        )
+
+        self.ctx.run("config_changed", state_in)
+
+        state_in = scenario.State(
+            leader=True,
+            secrets=[approle_secret],
+            relations=[peer_relation, pki_relation],
+            config={
+                "common_name": "myhostname.com",
+            },
+        )
+        # Imitate ttl of issued certificates (by pki role) being longer than the CA validity
+        self.mock_vault.get_role_max_ttl.return_value = 25 * 3600
+        self.mock_vault.get_intermediate_ca.return_value = str(provider_certificate.certificate)
+        self.ctx.run("config_changed", state_in)
+
+        self.mock_pki_requirer_renew_certificate.assert_called_once_with(
+            provider_certificate,
         )
 
     # Test Auto unseal
