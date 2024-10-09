@@ -67,13 +67,19 @@ class TestCharmConfigure(VaultCharmFixtures):
             endpoint="vault-peers",
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             relations=[peer_relation],
             model=scenario.Model(name=model_name),
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                scenario.Network(
+                    "vault-peers",
+                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                )
+            },
         )
 
-        self.ctx.run("config-changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         with open("tests/unit/config.hcl", "r") as f:
             expected_config = f.read()
@@ -92,12 +98,18 @@ class TestCharmConfigure(VaultCharmFixtures):
             endpoint="vault-peers",
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             relations=[peer_relation],
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                scenario.Network(
+                    "vault-peers",
+                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                )
+            },
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         vault_snap.start.assert_called_with(services=["vaultd"])
 
@@ -129,25 +141,31 @@ class TestCharmConfigure(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation],
             config={"common_name": "myhostname.com"},
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                scenario.Network(
+                    "vault-peers",
+                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                )
+            },
         )
         provider_certificate, private_key = generate_example_provider_certificate(
             common_name="myhostname.com",
-            relation_id=pki_relation.relation_id,
+            relation_id=pki_relation.id,
         )
         self.mock_pki_requirer_get_assigned_certificate.return_value = (
             provider_certificate,
             private_key,
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         self.mock_vault.enable_secrets_engine.assert_called_once_with(
             SecretsBackend.PKI, "charm-pki"
@@ -187,12 +205,12 @@ class TestCharmConfigure(VaultCharmFixtures):
         assigned_provider_certificate, assigned_private_key = (
             generate_example_provider_certificate(
                 common_name="myhostname.com",
-                relation_id=pki_relation_provider.relation_id,
+                relation_id=pki_relation_provider.id,
             )
         )
         requirer_csr = generate_example_requirer_csr(
             common_name="subdomain.myhostname.com",
-            relation_id=pki_relation_requirer.relation_id,
+            relation_id=pki_relation_requirer.id,
         )
 
         self.mock_pki_requirer_get_assigned_certificate.return_value = (
@@ -208,14 +226,20 @@ class TestCharmConfigure(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation_provider, pki_relation_requirer],
             config={"common_name": "myhostname.com"},
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                scenario.Network(
+                    "vault-peers",
+                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                )
+            },
         )
         self.mock_vault.configure_mock(
             **{
@@ -234,7 +258,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         self.mock_vault.sign_pki_certificate_signing_request.assert_called_once_with(
             mount="charm-pki",
@@ -244,7 +268,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_pki_provider_set_relation_certificate.assert_called_once_with(
             provider_certificate=ProviderCertificate(
-                relation_id=pki_relation_requirer.relation_id,
+                relation_id=pki_relation_requirer.id,
                 certificate=vault_generated_certificate,
                 ca=assigned_provider_certificate.certificate,
                 chain=[assigned_provider_certificate.certificate],
@@ -298,21 +322,22 @@ class TestCharmConfigure(VaultCharmFixtures):
             bind_address="myhostname",
             ingress_address="myhostname",
         )
-        relation = MockRelation(id=vault_autounseal_relation.relation_id)
+        relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, vault_autounseal_relation],
             config={"common_name": "myhostname.com"},
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         _, kwargs = self.mock_machine.push.call_args
         assert kwargs["path"] == "/var/snap/vault/common/vault.hcl"
@@ -366,22 +391,28 @@ class TestCharmConfigure(VaultCharmFixtures):
             bind_address="myhostname",
             ingress_address="myhostname",
         )
-        relation = MockRelation(id=vault_autounseal_relation.relation_id)
+        relation = MockRelation(id=vault_autounseal_relation.id)
         self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, vault_autounseal_relation],
             config={"common_name": "myhostname.com"},
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                scenario.Network(
+                    "vault-peers",
+                    bind_addresses=[scenario.BindAddress([scenario.Address("1.2.1.2")])],
+                )
+            },
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         self.mock_autounseal_provides_set_data.assert_called_with(
             relation,
@@ -421,16 +452,17 @@ class TestCharmConfigure(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret],
         )
         self.mock_kv_provides_get_outstanding_kv_requests.return_value = [
             KVRequest(
-                relation_id=kv_relation.relation_id,
+                relation_id=kv_relation.id,
                 app_name="vault-kv-remote",
                 unit_name="vault-kv-remote/0",
                 mount_suffix="suffix",
@@ -440,7 +472,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         ]
         self.mock_kv_provides_get_credentials.return_value = {}
 
-        state_out = self.ctx.run("config_changed", state_in)
+        state_out = self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         self.mock_vault.enable_secrets_engine.assert_called_once_with(
             SecretsBackend.KV_V2, "charm-vault-kv-remote-suffix"
@@ -448,9 +480,9 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_kv_provides_set_ca_certificate.assert_called()
         self.mock_kv_provides_set_egress_subnets.assert_called()
         self.mock_kv_provides_set_vault_url.assert_called()
-        assert state_out.secrets[1].label == "kv-creds-vault-kv-remote-0"
-        assert state_out.secrets[1].contents == {
-            0: {"role-id": "kv role id", "role-secret-id": "kv role secret id"}
+        assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").tracked_content == {
+            "role-id": "kv role id",
+            "role-secret-id": "kv role secret id",
         }
 
     def test_given_related_kv_client_unit_egress_is_updated_when_configure_then_secret_content_is_updated(
@@ -480,22 +512,26 @@ class TestCharmConfigure(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         kv_secret = scenario.Secret(
             id="1",
             label="kv-creds-vault-kv-remote-0",
-            contents={0: {"role-id": "kv role id", "role-secret-id": "initial kv role secret id"}},
+            tracked_content={
+                "role-id": "kv role id",
+                "role-secret-id": "initial kv role secret id",
+            },
             owner="app",
         )
         state_in = scenario.State(
+            unit_status=scenario.ActiveStatus(),
             leader=True,
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret, kv_secret],
         )
         self.mock_kv_provides_get_outstanding_kv_requests.return_value = [
             KVRequest(
-                relation_id=kv_relation.relation_id,
+                relation_id=kv_relation.id,
                 app_name="vault-kv-remote",
                 unit_name="vault-kv-remote/0",
                 mount_suffix="suffix",
@@ -505,10 +541,10 @@ class TestCharmConfigure(VaultCharmFixtures):
         ]
         self.mock_kv_provides_get_credentials.return_value = {nonce: kv_secret.id}
 
-        state_out = self.ctx.run("config_changed", state_in)
+        state_out = self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        assert state_out.secrets[1].label == "kv-creds-vault-kv-remote-0"
-        assert state_out.secrets[1].contents == {
-            0: {"role-id": "kv role id", "role-secret-id": "initial kv role secret id"},
-            1: {"role-id": "kv role id", "role-secret-id": "new kv role secret id"},
+        assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").latest_content == {
+            "role-id": "kv role id",
+            "role-secret-id": "new kv role secret id",
         }
+
