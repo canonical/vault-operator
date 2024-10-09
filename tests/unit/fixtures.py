@@ -28,6 +28,9 @@ class VaultCharmFixtures:
     patcher_pki_provider_set_relation_certificate = patch(
         "charm.TLSCertificatesProvidesV4.set_relation_certificate"
     )
+    patcher_pki_requirer_renew_certificate = patch(
+        "charm.TLSCertificatesRequiresV4.renew_certificate"
+    )
     patcher_autounseal_provides_get_outstanding_requests = patch(
         "charm.VaultAutounsealProvides.get_outstanding_requests"
     )
@@ -54,6 +57,9 @@ class VaultCharmFixtures:
         self.mock_socket_fqdn = VaultCharmFixtures.patcher_socket_fqdn.start()
         self.mock_pki_requirer_get_assigned_certificate = (
             VaultCharmFixtures.patcher_pki_requirer_get_assigned_certificate.start()
+        )
+        self.mock_pki_requirer_renew_certificate = (
+            VaultCharmFixtures.patcher_pki_requirer_renew_certificate.start()
         )
         self.mock_pki_provider_get_outstanding_certificate_requests = (
             VaultCharmFixtures.patcher_pki_provider_get_outstanding_certificate_requests.start()

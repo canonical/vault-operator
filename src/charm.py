@@ -5,13 +5,13 @@
 
 """A machine charm for Vault."""
 
-import datetime
 import json
 import logging
 import socket
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Tuple
 
 import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
@@ -21,6 +21,7 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     Certificate,
     CertificateRequest,
     Mode,
+    PrivateKey,
     ProviderCertificate,
     RequirerCSR,
     TLSCertificatesProvidesV4,
@@ -844,7 +845,7 @@ class VaultOperatorCharm(CharmBase):
         Returns:
             str: The backup key
         """
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         return f"{BACKUP_KEY_PREFIX}-{self.model.name}-{timestamp}"
 
     def _get_s3_parameters(self) -> Dict[str, str]:
@@ -999,11 +1000,18 @@ class VaultOperatorCharm(CharmBase):
         if not vault.is_pki_role_created(role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT):
             logger.debug("PKI role not created")
             return
+        intermediate_ca_certificate, _ = self._get_pki_intermediate_ca()
+        if not intermediate_ca_certificate:
+            return
+        allowed_cert_validity = self._calculate_pki_certificates_ttl(
+            intermediate_ca_certificate.certificate
+        )
         certificate = vault.sign_pki_certificate_signing_request(
             mount=VAULT_PKI_MOUNT,
             role=VAULT_PKI_ROLE,
             csr=str(requirer_csr.certificate_signing_request),
             common_name=requirer_csr.certificate_signing_request.common_name,
+            ttl=f"{allowed_cert_validity}s",
         )
         if not certificate:
             logger.debug("Failed to sign the certificate")
@@ -1058,28 +1066,24 @@ class VaultOperatorCharm(CharmBase):
         if not config_common_name:
             logger.error("Common name is not set in the charm config")
             return
-        certificate_request = self._get_certificate_request()
-        if not certificate_request:
-            logger.error("Certificate request is not valid")
-            return
-        intermediate_ca_certificate, private_key = (
-            self.tls_certificates_pki.get_assigned_certificate(
-                certificate_request=certificate_request
-            )
-        )
-        if not intermediate_ca_certificate:
-            logger.debug("Intermediate CA certificate available")
-            return
-        if not private_key:
-            logger.debug("Private key for intermediate CA not available")
+        intermediate_ca_certificate, private_key = self._get_pki_intermediate_ca()
+        if not intermediate_ca_certificate or not private_key:
             return
         vault.enable_secrets_engine(SecretsBackend.PKI, VAULT_PKI_MOUNT)
         existing_ca_certificate = vault.get_intermediate_ca(mount=VAULT_PKI_MOUNT)
+        existing_certificate = (
+            Certificate.from_string(existing_ca_certificate) if existing_ca_certificate else None
+        )
         if (
-            existing_ca_certificate
-            and Certificate.from_string(existing_ca_certificate)
-            == intermediate_ca_certificate.certificate
+            existing_certificate
+            and existing_certificate == intermediate_ca_certificate.certificate
         ):
+            if not self._intermediate_ca_exceeds_role_ttl(vault, existing_certificate):
+                self.tls_certificates_pki.renew_certificate(
+                    intermediate_ca_certificate,
+                )
+                logger.debug("Renewing the intermediate CA certificate")
+                return
             logger.debug("CA certificate already set in the PKI secrets engine")
             return
         self.vault_pki.revoke_all_certificates()
@@ -1088,15 +1092,22 @@ class VaultOperatorCharm(CharmBase):
             private_key=str(private_key),
             mount=VAULT_PKI_MOUNT,
         )
+        issued_certificate_validity = self._calculate_pki_certificates_ttl(
+            intermediate_ca_certificate.certificate
+        )
         if not vault.is_common_name_allowed_in_pki_role(
             role=VAULT_PKI_ROLE,
             mount=VAULT_PKI_MOUNT,
             common_name=config_common_name,
+        ) or issued_certificate_validity != vault.get_role_max_ttl(
+            role=VAULT_PKI_ROLE,
+            mount=VAULT_PKI_MOUNT,
         ):
             vault.create_or_update_pki_charm_role(
                 allowed_domains=config_common_name,
                 mount=VAULT_PKI_MOUNT,
                 role=VAULT_PKI_ROLE,
+                max_ttl=f"{issued_certificate_validity}s",
             )
         # Can run only after the first issuer has been actually created.
         try:
@@ -1353,6 +1364,59 @@ class VaultOperatorCharm(CharmBase):
     def _get_vault_kv_secret_label(self, unit_name: str):
         unit_name_dash = unit_name.replace("/", "-")
         return f"{KV_SECRET_PREFIX}{unit_name_dash}"
+
+    def _intermediate_ca_exceeds_role_ttl(
+        self, vault: Vault, intermediate_ca_certificate: Certificate
+    ) -> bool:
+        """Check if the intermediate CA's remaining validity exceeds the role's max TTL.
+
+        Vault PKI enforces that issued certificates cannot outlast their signing CA.
+        This method ensures that the intermediate CA's remaining validity period
+        is longer than the maximum TTL allowed for certificates issued by this role.
+        """
+        current_ttl = vault.get_role_max_ttl(role=VAULT_PKI_ROLE, mount=VAULT_PKI_MOUNT)
+        if (
+            not current_ttl
+            or not intermediate_ca_certificate.expiry_time
+            or not intermediate_ca_certificate.validity_start_time
+        ):
+            return False
+        certificate_validity = (
+            intermediate_ca_certificate.expiry_time
+            - intermediate_ca_certificate.validity_start_time
+        )
+        certificate_validity_seconds = certificate_validity.total_seconds()
+        return certificate_validity_seconds > current_ttl
+
+    def _calculate_pki_certificates_ttl(self, certificate: Certificate) -> int:
+        """Calculate the maximum allowed validity of certificates issued by PKI.
+
+        Return half the CA certificate validity in seconds.
+        """
+        if not certificate.expiry_time or not certificate.validity_start_time:
+            raise ValueError("Invalid CA certificate with no expiry time or validity start time")
+        ca_validity_time = certificate.expiry_time - certificate.validity_start_time
+        ca_validity_seconds = ca_validity_time.total_seconds()
+        return int(ca_validity_seconds / 2)
+
+    def _get_pki_intermediate_ca(
+        self,
+    ) -> Tuple[ProviderCertificate | None, PrivateKey | None]:
+        """Get the intermediate CA certificate."""
+        certificate_request = self._get_certificate_request()
+        if not certificate_request:
+            logger.error("Certificate request is not valid")
+            return None, None
+        provider_certificate, private_key = self.tls_certificates_pki.get_assigned_certificate(
+            certificate_request=certificate_request
+        )
+        if not provider_certificate:
+            logger.debug("No intermediate CA certificate available")
+            return None, None
+        if not private_key:
+            logger.debug("No private key available")
+            return None, None
+        return provider_certificate, private_key
 
     @property
     def _bind_address(self) -> str | None:
