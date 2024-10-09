@@ -27,7 +27,7 @@ class TestCharmRemove(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
@@ -38,7 +38,7 @@ class TestCharmRemove(VaultCharmFixtures):
             relations=[peer_relation],
         )
 
-        self.ctx.run("remove", state_in)
+        self.ctx.run(self.ctx.on.remove(), state_in)
 
         self.mock_vault.remove_raft_node.assert_called_with(node_id=f"{model_name}-vault/0")
         self.mock_machine.remove_path.assert_has_calls(
@@ -67,9 +67,8 @@ class TestCharmRemove(VaultCharmFixtures):
         )
         model_name = "model-name"
         approle_secret = scenario.Secret(
-            id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         peer_relation = scenario.PeerRelation(
             endpoint="vault-peers",
@@ -80,6 +79,6 @@ class TestCharmRemove(VaultCharmFixtures):
             relations=[peer_relation],
         )
 
-        self.ctx.run("remove", state_in)
+        self.ctx.run(self.ctx.on.remove(), state_in)
 
         self.mock_machine.stop.assert_has_calls([call("vault")])
