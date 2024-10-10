@@ -5,7 +5,7 @@
 
 from unittest.mock import MagicMock, call
 
-import scenario
+import ops.testing as testing
 
 from tests.unit.fixtures import VaultCharmFixtures
 
@@ -24,21 +24,20 @@ class TestCharmRemove(VaultCharmFixtures):
             },
         )
         model_name = "model-name"
-        approle_secret = scenario.Secret(
-            id="0",
+        approle_secret = testing.Secret(
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             secrets=[approle_secret],
-            model=scenario.Model(name=model_name),
+            model=testing.Model(name=model_name),
             relations=[peer_relation],
         )
 
-        self.ctx.run("remove", state_in)
+        self.ctx.run(self.ctx.on.remove(), state_in)
 
         self.mock_vault.remove_raft_node.assert_called_with(node_id=f"{model_name}-vault/0")
         self.mock_machine.remove_path.assert_has_calls(
@@ -66,20 +65,19 @@ class TestCharmRemove(VaultCharmFixtures):
             },
         )
         model_name = "model-name"
-        approle_secret = scenario.Secret(
-            id="0",
+        approle_secret = testing.Secret(
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        state_in = scenario.State(
+        state_in = testing.State(
             secrets=[approle_secret],
-            model=scenario.Model(name=model_name),
+            model=testing.Model(name=model_name),
             relations=[peer_relation],
         )
 
-        self.ctx.run("remove", state_in)
+        self.ctx.run(self.ctx.on.remove(), state_in)
 
         self.mock_machine.stop.assert_has_calls([call("vault")])
