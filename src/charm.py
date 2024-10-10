@@ -19,11 +19,11 @@ from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
 from charms.tls_certificates_interface.v4.tls_certificates import (
     Certificate,
-    CertificateRequest,
+    CertificateRequestAttributes,
     Mode,
     PrivateKey,
     ProviderCertificate,
-    RequirerCSR,
+    RequirerCertificateRequest,
     TLSCertificatesProvidesV4,
     TLSCertificatesRequiresV4,
 )
@@ -982,7 +982,7 @@ class VaultOperatorCharm(CharmBase):
                 nonce=kv_request.nonce,
             )
 
-    def _generate_pki_certificate_for_requirer(self, requirer_csr: RequirerCSR):
+    def _generate_pki_certificate_for_requirer(self, requirer_csr: RequirerCertificateRequest):
         """Generate a PKI certificate for a TLS requirer."""
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request")
@@ -1027,11 +1027,11 @@ class VaultOperatorCharm(CharmBase):
             provider_certificate=provider_certificate,
         )
 
-    def _get_certificate_request(self) -> CertificateRequest | None:
+    def _get_certificate_request(self) -> CertificateRequestAttributes | None:
         common_name = self._get_config_common_name()
         if not common_name:
             return None
-        return CertificateRequest(
+        return CertificateRequestAttributes(
             common_name=common_name,
             is_ca=True,
         )
