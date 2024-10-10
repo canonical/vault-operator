@@ -297,28 +297,34 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        peer_relation = scenario.PeerRelation(
+        peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
-        pki_relation = scenario.Relation(
+        pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
         )
-        approle_secret = scenario.Secret(
+        approle_secret = testing.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        state_in = scenario.State(
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation],
             config={"common_name": "myhostname.com"},
-            networks={"vault-peers": scenario.Network.default(private_address="1.2.1.2")},
+            networks={
+                testing.Network(
+                    "vault-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
         )
         provider_certificate, private_key = generate_example_provider_certificate(
             common_name="myhostname.com",
-            relation_id=pki_relation.relation_id,
+            relation_id=pki_relation.id,
             validity=timedelta(hours=24),
         )
         self.mock_pki_requirer_get_assigned_certificate.return_value = (
@@ -326,9 +332,10 @@ class TestCharmConfigure(VaultCharmFixtures):
             private_key,
         )
 
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        state_in = scenario.State(
+        state_in_2 = testing.State(
+            unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
             relations=[peer_relation, pki_relation],
@@ -339,7 +346,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         # Imitate ttl of issued certificates (by pki role) being longer than the CA validity
         self.mock_vault.get_role_max_ttl.return_value = 25 * 3600
         self.mock_vault.get_intermediate_ca.return_value = str(provider_certificate.certificate)
-        self.ctx.run("config_changed", state_in)
+        self.ctx.run(self.ctx.on.config_changed(), state_in_2)
 
         self.mock_pki_requirer_renew_certificate.assert_called_once_with(
             provider_certificate,
