@@ -36,8 +36,11 @@ jobs:
           provider: lxd
           lxd-channel: 5.20/stable
 
+      - name: Install uv
+        run: sudo snap install --classic astral-uv
+
       - name: Install tox
-        run: pip install tox
+        run: uv tool install tox --with tox-uv
 
       - name: Run integration tests
         run: |

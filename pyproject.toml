@@ -1,3 +1,39 @@
+[project]
+name = "vault-operator"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+dependencies = [
+    "boto3",
+    "boto3-stubs[s3]",
+    "cosl",
+    "cryptography",
+    "jinja2",
+    "jsonschema",
+    "ops",
+    "psutil",
+    "pyhcl",
+    "pyopenssl",
+    "pytest-interface-tester",
+    "rpds-py==0.18.1",
+    "hvac",
+]
+
+[dependency-groups]
+test = [
+    "coverage[toml]",
+    "juju",
+    "pytest",
+    "pytest-asyncio==0.21.2",
+    "pytest-dependency",
+    "pytest-operator",
+]
+dev = [
+    "codespell",
+    "pyright",
+    "ruff",
+]
+
 # Testing tools configuration
 [tool.coverage.run]
 branch = true
