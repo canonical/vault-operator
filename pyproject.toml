@@ -15,7 +15,7 @@ dependencies = [
     "pyhcl",
     "pyopenssl",
     "pytest-interface-tester",
-    "rpds-py==0.18.1",
+    "rpds-py==0.21.0",
     "hvac",
 ]
 
