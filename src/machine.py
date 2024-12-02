@@ -13,7 +13,7 @@ from typing import TextIO
 
 import psutil
 from charms.operator_libs_linux.v2 import snap
-from charms.vault_k8s.v0.vault_tls import WorkloadBase
+from charms.vault_k8s.v0.vault_managers import WorkloadBase
 
 logger = logging.getLogger(__name__)
 

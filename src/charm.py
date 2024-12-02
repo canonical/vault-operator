@@ -9,7 +9,6 @@ import json
 import logging
 import socket
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -30,7 +29,6 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
 from charms.vault_k8s.v0.vault_autounseal import (
     AutounsealDetails,
     VaultAutounsealProvides,
-    VaultAutounsealRequirerRelationBroken,
     VaultAutounsealRequires,
 )
 from charms.vault_k8s.v0.vault_client import (
@@ -38,7 +36,7 @@ from charms.vault_k8s.v0.vault_client import (
     AuditDeviceType,
     SecretsBackend,
     Token,
-    Vault,
+    VaultClient,
     VaultClientError,
 )
 from charms.vault_k8s.v0.vault_kv import (
@@ -46,11 +44,14 @@ from charms.vault_k8s.v0.vault_kv import (
     VaultKvClientDetachedEvent,
     VaultKvProvides,
 )
-from charms.vault_k8s.v0.vault_s3 import S3, S3Error
-from charms.vault_k8s.v0.vault_tls import (
+from charms.vault_k8s.v0.vault_managers import (
+    AutounsealConfigurationDetails,
     File,
+    VaultAutounsealProviderManager,
+    VaultAutounsealRequirerManager,
     VaultTLSManager,
 )
+from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from jinja2 import Environment, FileSystemLoader
 from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
 from ops.charm import CharmBase, CollectStatusEvent, RemoveEvent
@@ -92,16 +93,6 @@ VAULT_SNAP_CHANNEL = "1.16/stable"
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2300"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-
-
-@dataclass
-class AutounsealConfigurationDetails:
-    """Credentials required for configuring auto-unseal on Vault."""
-
-    address: str
-    key_name: str
-    token: str
-    ca_cert_path: str
 
 
 def _render_vault_config_file(
@@ -236,19 +227,29 @@ class VaultOperatorCharm(CharmBase):
             refresh_events=[self.on.config_changed],
         )
         self.s3_requirer = S3Requirer(self, S3_RELATION_NAME)
-        self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
-        self.framework.observe(self.on.update_status, self._configure)
-        self.framework.observe(self.on.config_changed, self._configure)
         self.framework.observe(self.on.remove, self._on_remove)
-        self.framework.observe(self.on[PEER_RELATION_NAME].relation_created, self._configure)
-        self.framework.observe(self.on[PEER_RELATION_NAME].relation_changed, self._configure)
         self.vault_autounseal_provides = VaultAutounsealProvides(
             self, AUTOUNSEAL_PROVIDES_RELATION_NAME
         )
         self.vault_autounseal_requires = VaultAutounsealRequires(
             self, AUTOUNSEAL_REQUIRES_RELATION_NAME
         )
+        configure_events = [
+            self.on.config_changed,
+            self.on[PEER_RELATION_NAME].relation_created,
+            self.on[PEER_RELATION_NAME].relation_changed,
+            self.on.install,
+            self.on.update_status,
+            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_broken,
+            self.vault_autounseal_requires.on.vault_autounseal_details_ready,
+            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_created,
+            self.vault_autounseal_requires.on.vault_autounseal_provider_relation_broken,
+            self.tls_certificates_pki.on.certificate_available,
+            self.on.tls_certificates_pki_relation_joined,
+        ]
+        for event in configure_events:
+            self.framework.observe(event, self._configure)
         self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
         self.framework.observe(
             self.vault_kv.on.new_vault_kv_client_attached, self._on_new_vault_kv_client_attached
@@ -256,51 +257,15 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(
             self.vault_kv.on.vault_kv_client_detached, self._on_vault_kv_client_detached
         )
-        self.framework.observe(
-            self.on.tls_certificates_pki_relation_joined,
-            self._configure,
-        )
-        self.framework.observe(
-            self.tls_certificates_pki.on.certificate_available,
-            self._configure,
-        )
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
-        self.framework.observe(
-            self.vault_autounseal_requires.on.vault_autounseal_details_ready,
-            self._configure,
-        )
-        self.framework.observe(
-            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_created,
-            self._configure,
-        )
-        self.framework.observe(
-            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_broken,
-            self._on_vault_autounseal_requirer_relation_broken,
-        )
-        self.framework.observe(
-            self.vault_autounseal_requires.on.vault_autounseal_provider_relation_broken,
-            self._configure,
-        )
 
     def _on_vault_kv_client_detached(self, event: VaultKvClientDetachedEvent):
         label = self._get_vault_kv_secret_label(unit_name=event.unit_name)
         self._remove_juju_secret_by_label(label=label)
 
-    def _on_vault_autounseal_requirer_relation_broken(
-        self, event: VaultAutounsealRequirerRelationBroken
-    ):
-        if not self.unit.is_leader():
-            return
-
-        vault = self._get_active_vault_client()
-        if vault is None:
-            logger.warning("Vault is not active, cannot disable vault autounseal")
-            return
-        vault.destroy_autounseal_credentials(event.relation.id, AUTOUNSEAL_MOUNT_PATH)
-
-    def _get_active_vault_client(self) -> Vault | None:
+    def _get_active_vault_client(self) -> VaultClient | None:
         """Return an initialized vault client.
 
         Returns:
@@ -324,31 +289,7 @@ class VaultOperatorCharm(CharmBase):
             return None
         return vault
 
-    def _generate_and_set_autounseal_credentials(self, relation: Relation) -> None:
-        """If leader, generate new credentials for the auto-unseal requirer.
-
-        These credentials are generated and then set in the relation databag so
-        that the requiring app can retrieve them, and use them to create tokens
-        that have the appropriate permissions to use the autounseal key.
-        """
-        if not self.unit.is_leader():
-            return
-        vault = self._get_active_vault_client()
-        if vault is None:
-            logger.warning("Vault is not active, cannot generate autounseal credentials")
-            return
-
-        vault.enable_secrets_engine(SecretsBackend.TRANSIT, AUTOUNSEAL_MOUNT_PATH)
-
-        key_name, approle_id, secret_id = vault.create_autounseal_credentials(
-            relation.id,
-            AUTOUNSEAL_MOUNT_PATH,
-            AUTOUNSEAL_POLICY_PATH,
-        )
-
-        self._set_autounseal_relation_data(relation, key_name, approle_id, secret_id)
-
-    def _sync_vault_autounseal(self) -> None:
+    def _sync_vault_autounseal(self, vault_client: VaultClient) -> None:
         """Go through all the vault-autounseal relations and send necessary credentials.
 
         This looks for any outstanding requests for auto-unseal that may have
@@ -358,9 +299,25 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-autounseal request")
             return
-        outstanding_requests = self.vault_autounseal_provides.get_outstanding_requests()
-        for relation in outstanding_requests:
-            self._generate_and_set_autounseal_credentials(relation)
+        autounseal_provider_manager = VaultAutounsealProviderManager(
+            charm=self,
+            client=vault_client,
+            provides=self.vault_autounseal_provides,
+            ca_cert=self.tls.pull_tls_file_from_workload(File.CA),
+            mount_path=AUTOUNSEAL_MOUNT_PATH,
+        )
+        outstanding_autounseal_requests = self.vault_autounseal_provides.get_outstanding_requests()
+        if outstanding_autounseal_requests:
+            vault_client.enable_secrets_engine(
+                SecretsBackend.TRANSIT, autounseal_provider_manager.mount_path
+            )
+        for relation in outstanding_autounseal_requests:
+            relation_address = self._get_relation_api_address(relation)
+            if not relation_address:
+                logger.warning("Relation address not found for relation %s", relation.id)
+                continue
+            autounseal_provider_manager.create_credentials(relation, relation_address)
+        autounseal_provider_manager.clean_up_credentials()
 
     def _set_autounseal_relation_data(
         self, relation: Relation, key_name: str, approle_id: str, approle_secret_id: str
@@ -464,11 +421,11 @@ class VaultOperatorCharm(CharmBase):
         try:
             vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
             vault.enable_approle_auth_method()
-            vault.configure_policy(
-                policy_name=VAULT_CHARM_POLICY_NAME, policy_path=VAULT_CHARM_POLICY_PATH
+            vault.create_or_update_policy_from_file(
+                name=VAULT_CHARM_POLICY_NAME, path=VAULT_CHARM_POLICY_PATH
             )
-            role_id = vault.configure_approle(
-                role_name="charm",
+            role_id = vault.create_or_update_approle(
+                name="charm",
                 policies=[VAULT_CHARM_POLICY_NAME, VAULT_DEFAULT_POLICY_NAME],
                 token_ttl="1h",
                 token_max_ttl="1h",
@@ -487,12 +444,12 @@ class VaultOperatorCharm(CharmBase):
         secret_content = {"role-id": role_id, "secret-id": secret_id}
         return self._set_juju_secret(VAULT_CHARM_APPROLE_SECRET_LABEL, secret_content)
 
-    def _get_vault_client(self) -> Vault | None:
+    def _get_vault_client(self) -> VaultClient | None:
         if not self._api_address:
             return None
         if not self.tls.tls_file_available_in_charm(File.CA):
             return None
-        return Vault(
+        return VaultClient(
             url=self._api_address,
             ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
         )
@@ -587,14 +544,15 @@ class VaultOperatorCharm(CharmBase):
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
         self._configure_pki_secrets_engine()
-        self._sync_vault_autounseal()
+
+        vault = self._get_active_vault_client()
+        if not vault:
+            return
+        self._sync_vault_autounseal(vault)
         self._sync_vault_kv()
         self._sync_vault_pki()
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
-            return
-        vault = self._get_active_vault_client()
-        if not vault:
             return
 
         if vault.is_active() and not vault.is_raft_cluster_healthy():
@@ -811,7 +769,7 @@ class VaultOperatorCharm(CharmBase):
         if not api_address:
             logger.error("Can't remove node from cluster - Vault API address is not available")
             return
-        vault = Vault(url=api_address, ca_cert_path=None)
+        vault = VaultClient(url=api_address, ca_cert_path=None)
         if not vault.is_api_available():
             logger.error("Can't remove node from cluster - Vault API is not available")
             return
@@ -826,8 +784,8 @@ class VaultOperatorCharm(CharmBase):
             logger.error("Can't remove node from cluster - Vault status check failed: %s", e)
             return
         vault.authenticate(approle)
-        if vault.is_node_in_raft_peers(node_id=self._node_id) and vault.get_num_raft_peers() > 1:
-            vault.remove_raft_node(node_id=self._node_id)
+        if vault.is_node_in_raft_peers(id=self._node_id) and vault.get_num_raft_peers() > 1:
+            vault.remove_raft_node(id=self._node_id)
 
     def _check_s3_pre_requisites(self) -> str | None:
         """Check if the S3 pre-requisites are met."""
@@ -897,11 +855,11 @@ class VaultOperatorCharm(CharmBase):
         unit_name_dash = unit_name.replace("/", "-")
         policy_name = role_name = f"{mount}-{unit_name_dash}"
         vault.enable_secrets_engine(SecretsBackend.KV_V2, mount)
-        vault.configure_policy(
-            policy_name=policy_name, policy_path="src/templates/kv_mount.hcl", mount=mount
+        vault.create_or_update_policy_from_file(
+            name=policy_name, path="src/templates/kv_mount.hcl", mount=mount
         )
-        role_id = vault.configure_approle(
-            role_name=role_name,
+        role_id = vault.create_or_update_approle(
+            name=role_name,
             policies=[policy_name],
             cidrs=egress_subnets,
             token_ttl="1h",
@@ -1225,6 +1183,7 @@ class VaultOperatorCharm(CharmBase):
 
         return AutounsealConfigurationDetails(
             autounseal_details.address,
+            AUTOUNSEAL_MOUNT_PATH,
             autounseal_details.key_name,
             self._get_autounseal_vault_token(autounseal_details),
             self.tls.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA),
@@ -1243,7 +1202,7 @@ class VaultOperatorCharm(CharmBase):
         Returns:
             A periodic Vault token that can be used for auto-unseal.
         """
-        vault = Vault(
+        vault = VaultClient(
             url=autounseal_details.address,
             ca_cert_path=self.tls.get_tls_file_path_in_charm(File.AUTOUNSEAL_CA),
         )
@@ -1285,6 +1244,9 @@ class VaultOperatorCharm(CharmBase):
             }
             for node_api_address in self._other_peer_node_api_addresses()
         ]
+
+        autounseal_configuration_details = self._get_vault_autounseal_configuration()
+
         content = _render_vault_config_file(
             default_lease_ttl=self._get_default_lease_ttl(),
             max_lease_ttl=self._get_max_lease_ttl(),
@@ -1296,7 +1258,7 @@ class VaultOperatorCharm(CharmBase):
             raft_storage_path=VAULT_STORAGE_PATH,
             node_id=self._node_id,
             retry_joins=retry_joins,
-            autounseal_details=self._get_autounseal_configuration(),
+            autounseal_details=autounseal_configuration_details,
         )
         existing_content = ""
         vault_config_file_path = f"{VAULT_CONFIG_PATH}/{VAULT_CONFIG_FILE_NAME}"
@@ -1315,6 +1277,25 @@ class VaultOperatorCharm(CharmBase):
             if _seal_types_are_different(existing_content, content):
                 if self._vault_service_is_running():
                     self.machine.restart(VAULT_SNAP_NAME)
+
+    def _get_vault_autounseal_configuration(self) -> AutounsealConfigurationDetails | None:
+        autounseal_relation_details = self.vault_autounseal_requires.get_details()
+        if not autounseal_relation_details:
+            return None
+        autounseal_requirer_manager = VaultAutounsealRequirerManager(
+            self, self.vault_autounseal_requires
+        )
+        self.tls.push_autounseal_ca_cert(autounseal_relation_details.ca_certificate)
+        provider_vault_token = autounseal_requirer_manager.get_provider_vault_token(
+            autounseal_relation_details, self.tls.get_tls_file_path_in_charm(File.AUTOUNSEAL_CA)
+        )
+        return AutounsealConfigurationDetails(
+            autounseal_relation_details.address,
+            autounseal_relation_details.mount_path,
+            autounseal_relation_details.key_name,
+            provider_vault_token,
+            self.tls.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA),
+        )
 
     def _is_peer_relation_created(self) -> bool:
         """Check if the peer relation is created."""
@@ -1366,7 +1347,7 @@ class VaultOperatorCharm(CharmBase):
         return f"{KV_SECRET_PREFIX}{unit_name_dash}"
 
     def _intermediate_ca_exceeds_role_ttl(
-        self, vault: Vault, intermediate_ca_certificate: Certificate
+        self, vault: VaultClient, intermediate_ca_certificate: Certificate
     ) -> bool:
         """Check if the intermediate CA's remaining validity exceeds the role's max TTL.
 
