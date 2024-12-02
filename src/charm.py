@@ -27,7 +27,6 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     TLSCertificatesRequiresV4,
 )
 from charms.vault_k8s.v0.vault_autounseal import (
-    AutounsealDetails,
     VaultAutounsealProvides,
     VaultAutounsealRequires,
 )
@@ -63,10 +62,8 @@ from machine import Machine
 logger = logging.getLogger(__name__)
 
 AUTOUNSEAL_MOUNT_PATH = "charm-autounseal"
-AUTOUNSEAL_POLICY_PATH = "src/templates/autounseal_policy.hcl"
 AUTOUNSEAL_PROVIDES_RELATION_NAME = "vault-autounseal-provides"
 AUTOUNSEAL_REQUIRES_RELATION_NAME = "vault-autounseal-requires"
-AUTOUNSEAL_TOKEN_SECRET_LABEL = "vault-autounseal-token"
 BACKUP_KEY_PREFIX = "vault-backup"
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
@@ -123,7 +120,7 @@ def _render_vault_config_file(
         retry_joins=retry_joins,
         autounseal_address=autounseal_details.address if autounseal_details else None,
         autounseal_key_name=autounseal_details.key_name if autounseal_details else None,
-        autounseal_mount_path=AUTOUNSEAL_MOUNT_PATH if autounseal_details else None,
+        autounseal_mount_path=autounseal_details.mount_path if autounseal_details else None,
         autounseal_token=autounseal_details.token if autounseal_details else None,
         autounseal_tls_ca_cert=autounseal_details.ca_cert_path if autounseal_details else None,
     )
@@ -318,40 +315,6 @@ class VaultOperatorCharm(CharmBase):
                 continue
             autounseal_provider_manager.create_credentials(relation, relation_address)
         autounseal_provider_manager.clean_up_credentials()
-
-    def _set_autounseal_relation_data(
-        self, relation: Relation, key_name: str, approle_id: str, approle_secret_id: str
-    ) -> None:
-        """Set the required autounseal data in the relation databag.
-
-        Args:
-            relation: Relation for which the auto-unseal data is being set
-            key_name: The vault transit key name used for auto-unseal
-            approle_id: The AppRole ID which has permission to use this key
-            approle_secret_id: The AppRole secret ID
-        """
-        vault_address = self._get_relation_api_address(relation)
-        if not vault_address:
-            logger.warning("Vault address not available, ignoring request to set autounseal data")
-            return
-        ca_cert = (
-            self.tls.pull_tls_file_from_workload(File.CA)
-            if self.tls.ca_certificate_is_saved()
-            else None
-        )
-        if not ca_cert:
-            logger.warning("CA certificate not available, ignoring request to set autounseal data")
-            return
-
-        self.vault_autounseal_provides.set_autounseal_data(
-            relation,
-            vault_address,
-            AUTOUNSEAL_MOUNT_PATH,
-            key_name,
-            approle_id,
-            approle_secret_id,
-            ca_cert,
-        )
 
     def generate_vault_scrape_configs(self) -> List[Dict] | None:
         """Generate the scrape configs for the COS agent.
@@ -1168,51 +1131,6 @@ class VaultOperatorCharm(CharmBase):
         vault_snap = snap_cache[VAULT_SNAP_NAME]
         vault_snap.start(services=["vaultd"])
         logger.debug("Vault service started")
-
-    def _get_autounseal_configuration(self) -> AutounsealConfigurationDetails | None:
-        """Retrieve the autounseal configuration details, if available.
-
-        Returns the autounseal configuration details if all the required
-        information is available, otherwise `None`.
-        """
-        autounseal_details = self.vault_autounseal_requires.get_details()
-        if not autounseal_details:
-            return None
-
-        self.tls.push_autounseal_ca_cert(autounseal_details.ca_certificate)
-
-        return AutounsealConfigurationDetails(
-            autounseal_details.address,
-            AUTOUNSEAL_MOUNT_PATH,
-            autounseal_details.key_name,
-            self._get_autounseal_vault_token(autounseal_details),
-            self.tls.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA),
-        )
-
-    def _get_autounseal_vault_token(self, autounseal_details: AutounsealDetails) -> str:
-        """Retrieve the auto-unseal Vault token, or generate a new one if required.
-
-        Retrieves the last used token from Juju secrets, and validates that it
-        is still valid. If the token is not valid, a new token is generated and
-        stored in the Juju secret. A valid token is returned.
-
-        Args:
-            autounseal_details: The autounseal configuration details.
-
-        Returns:
-            A periodic Vault token that can be used for auto-unseal.
-        """
-        vault = VaultClient(
-            url=autounseal_details.address,
-            ca_cert_path=self.tls.get_tls_file_path_in_charm(File.AUTOUNSEAL_CA),
-        )
-        existing_token = self._get_juju_secret_field(AUTOUNSEAL_TOKEN_SECRET_LABEL, "token")
-        # If we don't already have a token, or if the existing token is invalid,
-        # authenticate with the AppRole details to generate a new token.
-        if not existing_token or not vault.authenticate(Token(existing_token)):
-            vault.authenticate(AppRole(autounseal_details.role_id, autounseal_details.secret_id))
-            self._set_juju_secret(AUTOUNSEAL_TOKEN_SECRET_LABEL, {"token": vault.token})
-        return vault.token
 
     def _get_juju_secret_field(self, label: str, field: str) -> str | None:
         """Retrieve the latest revision of the secret content from Juju.
