@@ -337,9 +337,9 @@ async def authorize_charm(
 
     assert isinstance(app := ops_test.model.applications[app_name], Application)
     if app.status == "active":
-        logging.info("The charm is already active, skipping authorization.")
+        logger.info("The charm is already active, skipping authorization.")
         return
-    logging.info(f"Authorizing the charm `{app_name}` to interact with Vault.")
+    logger.info(f"Authorizing the charm `{app_name}` to interact with Vault.")
     secret = await ops_test.model.add_secret(f"approle-token-{app_name}", [f"token={root_token}"])
     secret_id = secret.split(":")[-1]
     await ops_test.model.grant_secret(f"approle-token-{app_name}", app_name)
@@ -353,7 +353,7 @@ async def authorize_charm(
     result = await ops_test.model.get_action_output(
         action_uuid=authorize_action.entity_id, wait=120
     )
-    logging.info(f"Authorization result: {result}")
+    logger.info(f"Authorization result: {result}")
     return result
 
 
