@@ -23,6 +23,8 @@ APP_NAME = METADATA["name"]
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 
+logger = logging.getLogger(__name__)
+
 
 def get_app(model: Model, app_name: str = APP_NAME) -> Application:
     """Get the application by name.
@@ -265,7 +267,7 @@ async def deploy_if_not_exists(
                 revision=revision,
             )
         except JujuError as e:
-            logging.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
+            logger.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
 
 
 async def get_juju_secret(model: Model, label: str, fields: List[str]) -> List[str]:
