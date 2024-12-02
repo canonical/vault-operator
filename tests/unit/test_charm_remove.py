@@ -40,7 +40,7 @@ class TestCharmRemove(VaultCharmFixtures):
 
         self.ctx.run("remove", state_in)
 
-        self.mock_vault.remove_raft_node.assert_called_with(node_id=f"{model_name}-vault/0")
+        self.mock_vault.remove_raft_node.assert_called_with(id=f"{model_name}-vault/0")
         self.mock_machine.remove_path.assert_has_calls(
             calls=[
                 call(path="/var/snap/vault/common/raft/vault.db"),

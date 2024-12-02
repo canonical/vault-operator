@@ -149,9 +149,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         self.ctx.run("config_changed", state_in)
 
-        self.mock_vault.enable_secrets_engine.assert_called_once_with(
-            SecretsBackend.PKI, "charm-pki"
-        )
+        self.mock_vault.enable_secrets_engine.assert_any_call(SecretsBackend.PKI, "charm-pki")
         self.mock_vault.import_ca_certificate_and_key.assert_called_once_with(
             certificate=str(provider_certificate.certificate),
             private_key=str(private_key),
@@ -164,6 +162,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             allowed_domains="myhostname.com",
             mount="charm-pki",
             role="charm-pki",
+            max_ttl="15768000s",
         )
 
     def test_given_vault_available_when_configure_then_certificate_is_provided(
@@ -241,6 +240,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             role="charm-pki",
             csr=str(requirer_csr.certificate_signing_request),
             common_name="subdomain.myhostname.com",
+            ttl="15768000s",
         )
         self.mock_pki_provider_set_relation_certificate.assert_called_once_with(
             provider_certificate=ProviderCertificate(
@@ -270,12 +270,23 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
                 "is_common_name_allowed_in_pki_role.return_value": False,
-                "create_autounseal_credentials.return_value": (
-                    key_name,
-                    approle_id,
-                    approle_secret_id,
-                ),
             },
+        )
+        self.mock_vault_autounseal_manager.configure_mock(
+            **{
+                "create_credentials.return_value": (key_name, approle_id, approle_secret_id),
+            }
+        )
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            "1.2.3.4",
+            "charm-autounseal",
+            key_name,
+            approle_id,
+            approle_secret_id,
+            "ca cert",
+        )
+        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+            "some token"
         )
         self.mock_tls.configure_mock(
             **{
@@ -283,7 +294,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
         )
         self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
-            "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
+            "1.2.3.4", "charm-autounseal", key_name, approle_id, approle_secret_id, "ca cert"
         )
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = scenario.PeerRelation(
@@ -303,7 +314,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         approle_secret = scenario.Secret(
             id="0",
             label="vault-approle-auth-details",
-            contents={0: {"role-id": "role id", "secret-id": "secret id"}},
+            contents={0: {"role-id": approle_id, "secret-id": approle_secret_id}},
         )
         state_in = scenario.State(
             leader=True,
@@ -321,8 +332,8 @@ class TestCharmConfigure(VaultCharmFixtures):
         assert actual_config_hcl["seal"]["transit"]["address"] == "1.2.3.4"
         assert actual_config_hcl["seal"]["transit"]["mount_path"] == "charm-autounseal"
         assert actual_config_hcl["seal"]["transit"]["token"] == "some token"
-        assert actual_config_hcl["seal"]["transit"]["key_name"] == "key name"
-        self.mock_vault.authenticate.assert_called_with(AppRole("role id", "secret id"))
+        assert actual_config_hcl["seal"]["transit"]["key_name"] == key_name
+        self.mock_vault.authenticate.assert_called_with(AppRole(approle_id, approle_secret_id))
         self.mock_tls.push_autounseal_ca_cert.assert_called_with("ca cert")
 
     @patch("ops.model.Model.get_binding")
@@ -340,12 +351,23 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_sealed.return_value": False,
                 "is_active_or_standby.return_value": True,
                 "is_common_name_allowed_in_pki_role.return_value": False,
-                "create_autounseal_credentials.return_value": (
-                    key_name,
-                    approle_id,
-                    approle_secret_id,
-                ),
             },
+        )
+        self.mock_vault_autounseal_manager.configure_mock(
+            **{
+                "create_credentials.return_value": (key_name, approle_id, approle_secret_id),
+            }
+        )
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            "1.2.3.4",
+            "charm-autounseal",
+            "key name",
+            "role id",
+            "secret id",
+            "ca cert",
+        )
+        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+            "some token"
         )
         self.mock_tls.configure_mock(
             **{
@@ -383,14 +405,9 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         self.ctx.run("config_changed", state_in)
 
-        self.mock_autounseal_provides_set_data.assert_called_with(
+        self.mock_vault_autounseal_manager.create_credentials.assert_called_with(
             relation,
             "https://myhostname:8200",
-            "charm-autounseal",
-            key_name,
-            approle_id,
-            approle_secret_id,
-            "my ca",
         )
 
     # KV
@@ -406,7 +423,7 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_initialized.return_value": True,
                 "is_sealed.return_value": False,
                 "generate_role_secret_id.return_value": "kv role secret id",
-                "configure_approle.return_value": "kv role id",
+                "create_or_update_approle.return_value": "kv role id",
             },
         )
         self.mock_autounseal_requires_get_details.return_value = None
@@ -442,7 +459,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         state_out = self.ctx.run("config_changed", state_in)
 
-        self.mock_vault.enable_secrets_engine.assert_called_once_with(
+        self.mock_vault.enable_secrets_engine.assert_any_call(
             SecretsBackend.KV_V2, "charm-vault-kv-remote-suffix"
         )
         self.mock_kv_provides_set_ca_certificate.assert_called()
@@ -465,7 +482,7 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_initialized.return_value": True,
                 "is_sealed.return_value": False,
                 "generate_role_secret_id.return_value": "new kv role secret id",
-                "configure_approle.return_value": "kv role id",
+                "create_or_update_approle.return_value": "kv role id",
             },
         )
         self.mock_autounseal_requires_get_details.return_value = None
