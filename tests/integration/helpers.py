@@ -267,7 +267,7 @@ async def deploy_if_not_exists(
                 revision=revision,
             )
         except JujuError as e:
-            logger.warning(f"Failed to deploy the `{app_name}` charm: `%s`", e)
+            logger.warning("Failed to deploy the `%s` charm: `%s`", app_name, e)
 
 
 async def get_juju_secret(model: Model, label: str, fields: List[str]) -> List[str]:
