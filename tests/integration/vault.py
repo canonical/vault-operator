@@ -105,15 +105,21 @@ class Vault:
             current_num_voters = sum(1 for server in servers if server.get("voter", False))
             current_num_nodes = len(servers)
             if current_num_nodes != expected_num_nodes:
-                logger.info(f"Nodes in the raft cluster: {current_num_nodes}/{expected_num_nodes}")
+                logger.info(
+                    "Nodes in the raft cluster: %d/%d",
+                    current_num_nodes,
+                    expected_num_nodes,
+                )
                 continue
             if current_num_voters != expected_num_nodes:
                 logger.info(
-                    f"Voters in the raft cluster: {current_num_voters}/{expected_num_nodes}"
+                    "Voters in the raft cluster: %d/%d", current_num_voters, current_num_nodes
                 )
                 continue
             logger.info(
-                f"Expected number of nodes are part of the raft cluster: {current_num_nodes}/{expected_num_nodes}"  # noqa: E501
+                "Expected number of nodes are part of the raft cluster: %d/%d",
+                current_num_nodes,
+                expected_num_nodes,
             )
             return
         raise TimeoutError("Timed out waiting for nodes to be part of the raft cluster.")
