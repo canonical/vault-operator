@@ -41,8 +41,8 @@ class VaultCharmFixtures:
     patcher_pki_requirer_renew_certificate = patch(
         "charm.TLSCertificatesRequiresV4.renew_certificate"
     )
-    patcher_autounseal_provides_get_outstanding_requests = patch(
-        "charm.VaultAutounsealProvides.get_outstanding_requests"
+    patcher_autounseal_provides_get_relations_without_credentials = patch(
+        "charm.VaultAutounsealProvides.get_relations_without_credentials"
     )
     patcher_autounseal_provides_set_data = patch(
         "charm.VaultAutounsealProvides.set_autounseal_data"
@@ -83,9 +83,7 @@ class VaultCharmFixtures:
         self.mock_pki_provider_set_relation_certificate = (
             VaultCharmFixtures.patcher_pki_provider_set_relation_certificate.start()
         )
-        self.mock_autounseal_provides_get_outstanding_requests = (
-            VaultCharmFixtures.patcher_autounseal_provides_get_outstanding_requests.start()
-        )
+        self.mock_autounseal_provides_get_relations_without_credentials = VaultCharmFixtures.patcher_autounseal_provides_get_relations_without_credentials.start()
         self.mock_autounseal_provides_set_data = (
             VaultCharmFixtures.patcher_autounseal_provides_set_data.start()
         )
