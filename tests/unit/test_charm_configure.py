@@ -13,6 +13,7 @@ from charms.operator_libs_linux.v2.snap import Snap
 from charms.tls_certificates_interface.v4.tls_certificates import ProviderCertificate
 from charms.vault_k8s.v0.vault_autounseal import AutounsealDetails
 from charms.vault_k8s.v0.vault_client import AppRole, Certificate, SecretsBackend
+from charms.vault_k8s.v0.vault_kv import KVRequest
 
 from tests.unit.certificates import (
     generate_example_provider_certificate,
@@ -570,8 +571,10 @@ class TestCharmConfigure(VaultCharmFixtures):
             "role-secret-id": "kv role secret id",
         }
 
+    @patch("charm.VaultKvProvides.get_kv_requests")
     def test_given_related_kv_client_unit_egress_is_updated_when_configure_then_secret_content_is_updated(
         self,
+        mock_kv_provides_get_kv_requests,
     ):
         nonce = "123123"
         self.mock_vault.configure_mock(
@@ -613,7 +616,16 @@ class TestCharmConfigure(VaultCharmFixtures):
             secrets=[approle_secret, kv_secret],
         )
         self.mock_kv_provides_get_credentials.return_value = {nonce: kv_secret.id}
-
+        mock_kv_provides_get_kv_requests.return_value = [
+            KVRequest(
+                relation=kv_relation,  # type: ignore
+                app_name="vault-kv-remote",
+                unit_name="vault-kv-remote/0",
+                mount_suffix="suffix",
+                egress_subnets=["2.2.2.0/24"],
+                nonce=nonce,
+            )
+        ]
         state_out = self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").latest_content == {
