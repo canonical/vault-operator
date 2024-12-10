@@ -115,7 +115,7 @@ async def self_signed_certificates_idle(ops_test: OpsTest) -> Task:
         await deploy_if_not_exists(
             ops_test.model, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME, channel="edge"
         )
-        async with ops_test.fast_forward():
+        async with ops_test.fast_forward(fast_interval="60s"):
             await ops_test.model.wait_for_idle(
                 apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
             )
@@ -132,7 +132,7 @@ async def vault_kv_requirer_idle(ops_test: OpsTest, kv_requirer_charm_path: Path
         await deploy_if_not_exists(
             ops_test.model, VAULT_KV_REQUIRER_APPLICATION_NAME, charm_path=kv_requirer_charm_path
         )
-        async with ops_test.fast_forward():
+        async with ops_test.fast_forward(fast_interval="60s"):
             await ops_test.model.wait_for_idle(
                 apps=[VAULT_KV_REQUIRER_APPLICATION_NAME],
             )
@@ -397,7 +397,7 @@ async def test_given_certificates_provider_is_related_when_vault_status_checked_
         relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
         relation2=f"{APP_NAME}:tls-certificates-access",
     )
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(apps=[APP_NAME])
         await ops_test.model.wait_for_idle(apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME])
     vault_ip = await get_leader_unit_address(ops_test)
@@ -428,7 +428,7 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     vault.unseal(unseal_key)
     vault.wait_for_node_to_be_unsealed()
     assert vault.is_active()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await unseal_all_vault_units(ops_test, ca_file_location, unseal_key)
         await authorize_charm(ops_test, root_token)
         await ops_test.model.wait_for_idle(
@@ -453,7 +453,7 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
     app = get_app(ops_test.model)
     await app.add_unit(count=1)
 
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -469,7 +469,7 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
     )
     vault.unseal(unseal_key=unseal_key)
     vault.wait_for_node_to_be_unsealed()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -492,7 +492,7 @@ async def test_given_application_is_deployed_when_scale_down_then_status_is_acti
 
     new_unit = get_app(ops_test.model).units[-1]
     await new_unit.remove()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -516,7 +516,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
         relation1=f"{APP_NAME}:cos-agent",
         relation2=f"{GRAFANA_AGENT_APPLICATION_NAME}:cos-agent",
     )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -539,7 +539,7 @@ async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_t
             relation1=f"{APP_NAME}:vault-kv",
             relation2=f"{VAULT_KV_REQUIRER_APPLICATION_NAME}:vault-kv",
         )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME, VAULT_KV_REQUIRER_APPLICATION_NAME],
             status="active",
@@ -674,7 +674,7 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
         "common_name": common_name,
     }
     await vault_app.set_config(common_name_config)
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
@@ -828,7 +828,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
         trust=True,
         num_units=1,
     )
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=["vault-b"],
             status="blocked",
@@ -846,7 +846,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
     await ops_test.model.integrate(
         f"{APP_NAME}:vault-autounseal-provides", "vault-b:vault-autounseal-requires"
     )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=["vault-b"], status="blocked", wait_for_exact_units=1, idle_period=5
         )

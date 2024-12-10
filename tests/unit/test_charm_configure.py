@@ -618,5 +618,5 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").latest_content == {
             "role-id": "kv role id",
-            "role-secret-id": "initial kv role secret id",
+            "role-secret-id": "new kv role secret id",
         }
