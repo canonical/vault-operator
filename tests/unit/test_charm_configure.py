@@ -13,7 +13,6 @@ from charms.operator_libs_linux.v2.snap import Snap
 from charms.tls_certificates_interface.v4.tls_certificates import ProviderCertificate
 from charms.vault_k8s.v0.vault_autounseal import AutounsealDetails
 from charms.vault_k8s.v0.vault_client import AppRole, Certificate, SecretsBackend
-from charms.vault_k8s.v0.vault_kv import KVRequest
 
 from tests.unit.certificates import (
     generate_example_provider_certificate,
@@ -26,7 +25,7 @@ from tests.unit.fixtures import VaultCharmFixtures
 class MockRelation:
     """Mock class for Relation used in Autounseal tests.
 
-    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    We shouldn't need this mock. If we replace the output return of `get_relations_without_credentials`
     to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
     """
 
@@ -37,7 +36,7 @@ class MockRelation:
 class MockNetwork:
     """Mock class for Relation used in Autounseal tests.
 
-    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    We shouldn't need this mock. If we replace the output return of `get_relations_without_credentials`
     to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
     """
 
@@ -49,7 +48,7 @@ class MockNetwork:
 class MockBinding:
     """Mock class for Relation used in Autounseal tests.
 
-    We shouldn't need this mock. If we replace the output return of `get_outstanding_requests`
+    We shouldn't need this mock. If we replace the output return of `get_relations_without_credentials`
     to be a list of relation ID's instead of a list of relation objects, we can remove this mock.
     """
 
@@ -408,7 +407,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             ingress_address="myhostname",
         )
         relation = MockRelation(id=vault_autounseal_relation.id)
-        self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
+        self.mock_autounseal_provides_get_relations_without_credentials.return_value = [relation]
         approle_secret = testing.Secret(
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
@@ -487,7 +486,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             ingress_address="myhostname",
         )
         relation = MockRelation(id=vault_autounseal_relation.id)
-        self.mock_autounseal_provides_get_outstanding_requests.return_value = [relation]
+        self.mock_autounseal_provides_get_relations_without_credentials.return_value = [relation]
         approle_secret = testing.Secret(
             label="vault-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
@@ -515,9 +514,10 @@ class TestCharmConfigure(VaultCharmFixtures):
 
     # KV
 
-    def test_given_outstanding_kv_request_when_configure_then_kv_relation_data_is_set(
+    def test_given_kv_request_when_configure_then_kv_relation_data_is_set(
         self,
     ):
+        self.mock_machine.pull.return_value = StringIO("")
         self.mock_vault.configure_mock(
             **{
                 "token": "some token",
@@ -530,13 +530,22 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
         )
         self.mock_autounseal_requires_get_details.return_value = None
-        self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
         kv_relation = testing.Relation(
             endpoint="vault-kv",
             interface="vault-kv",
+            remote_app_name="vault-kv",
+            remote_app_data={
+                "mount_suffix": "remote-suffix",
+            },
+            remote_units_data={
+                0: {
+                    "nonce": "123123",
+                    "egress_subnet": "2.2.2.0/24",
+                },
+            },
         )
         approle_secret = testing.Secret(
             label="vault-approle-auth-details",
@@ -548,16 +557,6 @@ class TestCharmConfigure(VaultCharmFixtures):
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret],
         )
-        self.mock_kv_provides_get_outstanding_kv_requests.return_value = [
-            KVRequest(
-                relation_id=kv_relation.id,
-                app_name="vault-kv-remote",
-                unit_name="vault-kv-remote/0",
-                mount_suffix="suffix",
-                egress_subnets=["2.2.2.0/24"],
-                nonce="123123",
-            )
-        ]
         self.mock_kv_provides_get_credentials.return_value = {}
 
         state_out = self.ctx.run(self.ctx.on.config_changed(), state_in)
@@ -565,10 +564,8 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_vault.enable_secrets_engine.assert_any_call(
             SecretsBackend.KV_V2, "charm-vault-kv-remote-suffix"
         )
-        self.mock_kv_provides_set_ca_certificate.assert_called()
-        self.mock_kv_provides_set_egress_subnets.assert_called()
-        self.mock_kv_provides_set_vault_url.assert_called()
-        assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").tracked_content == {
+        self.mock_kv_provides_set_kv_data.assert_called()
+        assert state_out.get_secret(label="kv-creds-vault-kv-0").tracked_content == {
             "role-id": "kv role id",
             "role-secret-id": "kv role secret id",
         }
@@ -615,21 +612,11 @@ class TestCharmConfigure(VaultCharmFixtures):
             relations=[peer_relation, kv_relation],
             secrets=[approle_secret, kv_secret],
         )
-        self.mock_kv_provides_get_outstanding_kv_requests.return_value = [
-            KVRequest(
-                relation_id=kv_relation.id,
-                app_name="vault-kv-remote",
-                unit_name="vault-kv-remote/0",
-                mount_suffix="suffix",
-                egress_subnets=["2.2.2.0/24"],
-                nonce=nonce,
-            )
-        ]
         self.mock_kv_provides_get_credentials.return_value = {nonce: kv_secret.id}
 
         state_out = self.ctx.run(self.ctx.on.config_changed(), state_in)
 
         assert state_out.get_secret(label="kv-creds-vault-kv-remote-0").latest_content == {
             "role-id": "kv role id",
-            "role-secret-id": "new kv role secret id",
+            "role-secret-id": "initial kv role secret id",
         }

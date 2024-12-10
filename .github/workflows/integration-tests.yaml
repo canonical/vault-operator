@@ -14,21 +14,21 @@ jobs:
         with:
           name: built-charm
           path: built/
-      
+
       - name: Get Charm Under Test Path
         id: charm-path
         run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
-      
+
       - name: Fetch KV Requirer Charm
         uses: actions/download-artifact@v4
         with:
           name: kv-requirer-charm
           path: kv-requirer/
-      
+
       - name: Get KV Requirer Charm Path
         id: kv-requirer-charm-path
         run: echo "charm_path=$(find kv-requirer/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
-    
+
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
@@ -38,9 +38,9 @@ jobs:
 
       - name: Install UV and Tox
         run: |
-          python3 -m pip uninstall tox -y
+          pipx uninstall tox
           sudo snap install astral-uv --classic
-          uv tool install tox --with tox-uv
+          uv tool install tox --with tox-uv --force
 
       - name: Run integration tests
         run: |
