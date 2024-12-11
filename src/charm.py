@@ -512,7 +512,11 @@ class VaultOperatorCharm(CharmBase):
             if not self.tls.ca_certificate_is_saved():
                 return
         self._generate_vault_config_file()
-        self._start_vault_service()
+        try:
+            self._start_vault_service()
+        except snap.SnapError as e:
+            logger.error("Failed to start Vault service: %s", e)
+            return
         self._set_peer_relation_node_api_address()
 
         vault = self._get_active_vault_client()
