@@ -70,6 +70,17 @@ async def vault_idle(ops_test: OpsTest, request, vault_charm_path) -> Task:
 
 
 @pytest.fixture(scope="function")
+async def vault_idle_blocked(ops_test: OpsTest, request, vault_charm_path) -> Task:
+    """Deploy the Vault charm, and wait for it to be blocked.
+
+    This is the default state of Vault.
+    """
+    return create_task(
+        deploy_vault_and_wait(ops_test, vault_charm_path, NUM_VAULT_UNITS, status="blocked")
+    )
+
+
+@pytest.fixture(scope="function")
 async def vault_initialized(ops_test: OpsTest, vault_idle: Task) -> Task:
     async def deploy_and_initialize():
         assert ops_test.model
@@ -377,9 +388,11 @@ async def test_deploy_all_the_things(
 
 
 @pytest.mark.abort_on_fail
-async def test_given_charm_deployed_then_status_blocked(ops_test: OpsTest, vault_idle: Task):
+async def test_given_charm_deployed_then_status_blocked(
+    ops_test: OpsTest, vault_idle_blocked: Task
+):
     assert ops_test.model
-    await vault_idle
+    await vault_idle_blocked
 
     vault_app = get_app(ops_test.model)
     assert vault_app.status == "blocked"
@@ -387,11 +400,11 @@ async def test_given_charm_deployed_then_status_blocked(ops_test: OpsTest, vault
 
 @pytest.mark.abort_on_fail
 async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(  # noqa: E501
-    ops_test: OpsTest, vault_idle: Task, self_signed_certificates_idle: Task
+    ops_test: OpsTest, vault_idle_blocked: Task, self_signed_certificates_idle: Task
 ):
     """To test that Vault is actually running when the charm is active."""
     assert ops_test.model
-    await gather(vault_idle, self_signed_certificates_idle)
+    await gather(vault_idle_blocked, self_signed_certificates_idle)
 
     await ops_test.model.integrate(
         relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",

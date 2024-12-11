@@ -506,7 +506,7 @@ class VaultOperatorCharm(CharmBase):
             return
         if not self._bind_address:
             return
-        if not self.unit.is_leader():
+        if not self.juju_facade.is_leader:
             if len(self._other_peer_node_api_addresses()) == 0:
                 return
             if not self.tls.ca_certificate_is_saved():
@@ -514,11 +514,11 @@ class VaultOperatorCharm(CharmBase):
         self._generate_vault_config_file()
         self._start_vault_service()
         self._set_peer_relation_node_api_address()
-        self._configure_pki_secrets_engine()
 
         vault = self._get_active_vault_client()
         if not vault:
             return
+        self._configure_pki_secrets_engine(vault)
         self._sync_vault_autounseal(vault)
         self._sync_vault_kv(vault)
         self._sync_vault_pki()
@@ -994,14 +994,10 @@ class VaultOperatorCharm(CharmBase):
                 requirer_csr=pki_request,
             )
 
-    def _configure_pki_secrets_engine(self) -> None:  # noqa: C901
+    def _configure_pki_secrets_engine(self, vault: VaultClient) -> None:  # noqa: C901
         """Configure the PKI secrets engine."""
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request, skipping")
-            return
-        vault = self._get_active_vault_client()
-        if not vault:
-            logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
             return
         if not self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME):
             logger.debug("TLS Certificates PKI relation not created, skipping")
