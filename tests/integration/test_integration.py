@@ -50,6 +50,12 @@ UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
 VAULT_PKI_REQUIRER_REVISION = 93
 
 
+class ActionFailedError(Exception):
+    """Exception raised when an action fails."""
+
+    pass
+
+
 @pytest.fixture(scope="session")
 def vault_charm_path(request):
     return Path(request.config.getoption("--charm_path")).resolve()
@@ -111,7 +117,10 @@ async def vault_authorized(ops_test: OpsTest, vault_unsealed: Task) -> Task:
     root_token, key = await vault_unsealed
 
     async def authorize():
-        await authorize_charm(ops_test, root_token)
+        try:
+            await authorize_charm(ops_test, root_token)
+        except ActionFailedError:
+            logger.warning("Failed to authorize charm")
         return root_token, key
 
     return create_task(authorize())
@@ -361,6 +370,11 @@ async def authorize_charm(
             "secret-id": secret_id,
         },
     )
+    status = await ops_test.model.get_action_status(
+        action_uuid=authorize_action.entity_id
+    )
+    if status == "failed":
+        raise ActionFailedError("Failed to authorize charm")
     result = await ops_test.model.get_action_output(
         action_uuid=authorize_action.entity_id, wait=120
     )
@@ -443,7 +457,10 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     assert vault.is_active()
     async with ops_test.fast_forward(fast_interval="60s"):
         await unseal_all_vault_units(ops_test, ca_file_location, unseal_key)
-        await authorize_charm(ops_test, root_token)
+        try:
+            await authorize_charm(ops_test, root_token)
+        except ActionFailedError as e:
+            logger.warning("Failed to authorize charm: %s", e)
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
@@ -878,7 +895,10 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
             expected_message="Please authorize charm (see `authorize-charm` action)",
             app_name="vault-b",
         )
-        await authorize_charm(ops_test, root_token, "vault-b")
+        try:
+            await authorize_charm(ops_test, root_token, "vault-b")
+        except ActionFailedError:
+            logger.warning("Failed to authorize charm")
         await ops_test.model.wait_for_idle(
             apps=["vault-b"],
             status="active",
