@@ -501,7 +501,11 @@ class VaultOperatorCharm(CharmBase):
         """
         self._create_backend_directory()
         self._create_certs_directory()
-        self._install_vault_snap()
+        try:
+            self._install_vault_snap()
+        except snap.SnapError as e:
+            logger.error("Failed to install Vault snap: %s", e)
+            return
         if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             return
         if not self._bind_address:
