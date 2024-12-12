@@ -18,6 +18,7 @@ storage:
   certs:
     type: filesystem
     minimum-size: 5M
+    location: /var/snap/vault/common/certs
 
 type: "charm"
 bases:
