@@ -41,19 +41,14 @@ class VaultCharmFixtures:
     patcher_pki_requirer_renew_certificate = patch(
         "charm.TLSCertificatesRequiresV4.renew_certificate"
     )
-    patcher_autounseal_provides_get_outstanding_requests = patch(
-        "charm.VaultAutounsealProvides.get_outstanding_requests"
+    patcher_autounseal_provides_get_relations_without_credentials = patch(
+        "charm.VaultAutounsealProvides.get_relations_without_credentials"
     )
     patcher_autounseal_provides_set_data = patch(
         "charm.VaultAutounsealProvides.set_autounseal_data"
     )
     patcher_autounseal_requires_get_details = patch("charm.VaultAutounsealRequires.get_details")
-    patcher_kv_provides_get_outstanding_kv_requests = patch(
-        "charm.VaultKvProvides.get_outstanding_kv_requests"
-    )
-    patcher_kv_provides_set_ca_certificate = patch("charm.VaultKvProvides.set_ca_certificate")
-    patcher_kv_provides_set_egress_subnets = patch("charm.VaultKvProvides.set_egress_subnets")
-    patcher_kv_provides_set_vault_url = patch("charm.VaultKvProvides.set_vault_url")
+    patcher_kv_provides_set_kv_data = patch("charm.VaultKvProvides.set_kv_data")
     patcher_kv_provides_get_credentials = patch("charm.VaultKvProvides.get_credentials")
     patcher_snap_cache = patch("charm.snap.SnapCache")
     patcher_machine = patch("charm.Machine")
@@ -83,26 +78,15 @@ class VaultCharmFixtures:
         self.mock_pki_provider_set_relation_certificate = (
             VaultCharmFixtures.patcher_pki_provider_set_relation_certificate.start()
         )
-        self.mock_autounseal_provides_get_outstanding_requests = (
-            VaultCharmFixtures.patcher_autounseal_provides_get_outstanding_requests.start()
-        )
+        self.mock_autounseal_provides_get_relations_without_credentials = VaultCharmFixtures.patcher_autounseal_provides_get_relations_without_credentials.start()
         self.mock_autounseal_provides_set_data = (
             VaultCharmFixtures.patcher_autounseal_provides_set_data.start()
         )
         self.mock_autounseal_requires_get_details = (
             VaultCharmFixtures.patcher_autounseal_requires_get_details.start()
         )
-        self.mock_kv_provides_get_outstanding_kv_requests = (
-            VaultCharmFixtures.patcher_kv_provides_get_outstanding_kv_requests.start()
-        )
-        self.mock_kv_provides_set_ca_certificate = (
-            VaultCharmFixtures.patcher_kv_provides_set_ca_certificate.start()
-        )
-        self.mock_kv_provides_set_egress_subnets = (
-            VaultCharmFixtures.patcher_kv_provides_set_egress_subnets.start()
-        )
-        self.mock_kv_provides_set_vault_url = (
-            VaultCharmFixtures.patcher_kv_provides_set_vault_url.start()
+        self.mock_kv_provides_set_kv_data = (
+            VaultCharmFixtures.patcher_kv_provides_set_kv_data.start()
         )
         self.mock_kv_provides_get_credentials = (
             VaultCharmFixtures.patcher_kv_provides_get_credentials.start()

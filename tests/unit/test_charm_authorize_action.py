@@ -42,13 +42,13 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "authenticate.return_value": False,
             },
         )
-        approle_secret = testing.Secret(
+        token_secret = testing.Secret(
             label="vault-approle-auth-details",
-            tracked_content={"role-id": "role id", "secret-id": "secret id"},
+            tracked_content={"token": "my token"},
         )
         state_in = testing.State(
             leader=True,
-            secrets=[approle_secret],
+            secrets=[token_secret],
             networks={
                 testing.Network(
                     "vault-peers",
@@ -59,7 +59,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
 
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}),
+                self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
                 state_in,
             )
         assert e.value.message == "API address is not available."
@@ -70,16 +70,16 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 "tls_file_available_in_charm.return_value": False,
             },
         )
-        approle_secret = testing.Secret(
+        token_secret = testing.Secret(
             label="vault-approle-auth-details",
-            tracked_content={"role-id": "role id", "secret-id": "secret id"},
+            tracked_content={"token": "my token"},
         )
         peer_relation = testing.PeerRelation(
             endpoint="vault-peers",
         )
         state_in = testing.State(
             leader=True,
-            secrets=[approle_secret],
+            secrets=[token_secret],
             relations=[peer_relation],
             networks={
                 testing.Network(
@@ -91,7 +91,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
 
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(
-                self.ctx.on.action("authorize-charm", params={"secret-id": approle_secret.id}),
+                self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
                 state_in,
             )
         assert (

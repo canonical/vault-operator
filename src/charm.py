@@ -26,6 +26,11 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     TLSCertificatesProvidesV4,
     TLSCertificatesRequiresV4,
 )
+from charms.vault_k8s.v0.juju_facade import (
+    JujuFacade,
+    NoSuchSecretError,
+    SecretRemovedError,
+)
 from charms.vault_k8s.v0.vault_autounseal import (
     VaultAutounsealProvides,
     VaultAutounsealRequires,
@@ -52,10 +57,10 @@ from charms.vault_k8s.v0.vault_managers import (
 )
 from charms.vault_k8s.v0.vault_s3 import S3, S3Error
 from jinja2 import Environment, FileSystemLoader
-from ops import ActionEvent, BlockedStatus, ErrorStatus, Secret, SecretNotFoundError
+from ops import ActionEvent, BlockedStatus, ErrorStatus
 from ops.charm import CharmBase, CollectStatusEvent, RemoveEvent
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
+from ops.model import ActiveStatus, MaintenanceStatus, Relation, WaitingStatus
 
 from machine import Machine
 
@@ -191,6 +196,7 @@ class VaultOperatorCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self.juju_facade = JujuFacade(self)
         self.machine = Machine()
         self._cos_agent = COSAgentProvider(
             self,
@@ -260,7 +266,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _on_vault_kv_client_detached(self, event: VaultKvClientDetachedEvent):
         label = self._get_vault_kv_secret_label(unit_name=event.unit_name)
-        self._remove_juju_secret_by_label(label=label)
+        self.juju_facade.remove_secret(label=label)
 
     def _get_active_vault_client(self) -> VaultClient | None:
         """Return an initialized vault client.
@@ -277,7 +283,7 @@ class VaultOperatorCharm(CharmBase):
             return None
         if not vault.is_api_available():
             return None
-        approle = self._get_vault_approle()
+        approle = self._get_vault_approle_secret()
         if not approle:
             return None
         if not vault.authenticate(approle):
@@ -303,12 +309,14 @@ class VaultOperatorCharm(CharmBase):
             ca_cert=self.tls.pull_tls_file_from_workload(File.CA),
             mount_path=AUTOUNSEAL_MOUNT_PATH,
         )
-        outstanding_autounseal_requests = self.vault_autounseal_provides.get_outstanding_requests()
-        if outstanding_autounseal_requests:
+        relations_without_credentials = (
+            self.vault_autounseal_provides.get_relations_without_credentials()
+        )
+        if relations_without_credentials:
             vault_client.enable_secrets_engine(
                 SecretsBackend.TRANSIT, autounseal_provider_manager.mount_path
             )
-        for relation in outstanding_autounseal_requests:
+        for relation in relations_without_credentials:
             relation_address = self._get_relation_api_address(relation)
             if not relation_address:
                 logger.warning("Relation address not found for relation %s", relation.id)
@@ -322,7 +330,7 @@ class VaultOperatorCharm(CharmBase):
         Returns:
             The scrape configs for the COS agent or an empty list.
         """
-        if not self._is_peer_relation_created():
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             return []
         return [
             {
@@ -356,19 +364,24 @@ class VaultOperatorCharm(CharmBase):
 
         secret_id = event.params.get("secret-id", "")
         try:
-            token_secret = self.model.get_secret(id=secret_id)
-            token = token_secret.get_content(refresh=True).get("token", "")
-        except SecretNotFoundError:
+            if not (
+                token := self.juju_facade.get_latest_secret_content(id=secret_id).get("token", "")
+            ):
+                logger.warning("Token not found in the secret when authorizing charm.")
+                event.fail("Token not found in the secret. Please provide a valid token secret.")
+                return
+        except (NoSuchSecretError, SecretRemovedError):
+            logger.warning(
+                "Secret id provided could not be found by the charm when authorizing charm."
+            )
             event.fail(
-                (
-                    "The secret id provided could not be found by the charm. "
-                    "Please grant the token secret to the charm."
-                )
+                "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
             )
             return
 
         logger.info("Authorizing the charm to interact with Vault")
         if not self._api_address:
+            logger.warning("API address is not available when authorizing charm")
             event.fail("API address is not available.")
             return
         if not self.tls.tls_file_available_in_charm(File.CA):
@@ -376,9 +389,11 @@ class VaultOperatorCharm(CharmBase):
             return
         vault = self._get_vault_client()
         if not vault:
+            logger.warning("Failed to initialize the Vault client when authorizing charm")
             event.fail("Failed to initialize the Vault client")
             return
         if not vault.authenticate(Token(token)):
+            logger.warning("Failed to authenticate with Vault when authorizing charm")
             event.fail("Failed to authenticate with Vault")
             return
         try:
@@ -394,7 +409,11 @@ class VaultOperatorCharm(CharmBase):
                 token_max_ttl="1h",
             )
             vault_secret_id = vault.generate_role_secret_id(name="charm")
-            self._create_approle_secret(role_id, vault_secret_id)
+            self.juju_facade.set_app_secret_content(
+                content={"role-id": role_id, "secret-id": vault_secret_id},
+                label=VAULT_CHARM_APPROLE_SECRET_LABEL,
+                description="The authentication details for the charm's access to vault.",
+            )
             event.set_results(
                 {"result": "Charm authorized successfully. You may now remove the secret."}
             )
@@ -402,10 +421,6 @@ class VaultOperatorCharm(CharmBase):
             logger.exception("Vault returned an error while authorizing the charm")
             event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
             return
-
-    def _create_approle_secret(self, role_id: str, secret_id: str) -> Secret:
-        secret_content = {"role-id": role_id, "secret-id": secret_id}
-        return self._set_juju_secret(VAULT_CHARM_APPROLE_SECRET_LABEL, secret_content)
 
     def _get_vault_client(self) -> VaultClient | None:
         if not self._api_address:
@@ -420,7 +435,7 @@ class VaultOperatorCharm(CharmBase):
     def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
         """Handle the collect status event."""
         if (
-            self._tls_certificates_pki_relation_created()
+            self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME)
             and not self._common_name_config_is_valid()
         ):
             event.add_status(
@@ -430,7 +445,7 @@ class VaultOperatorCharm(CharmBase):
                 )
             )
             return
-        if not self._is_peer_relation_created():
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             event.add_status(WaitingStatus("Waiting for peer relation"))
             return
         if not self._bind_address:
@@ -477,7 +492,7 @@ class VaultOperatorCharm(CharmBase):
         except VaultClientError:
             event.add_status(MaintenanceStatus("Seal check failed, waiting for Vault to recover"))
             return
-        if not self._get_vault_approle():
+        if not self._get_vault_approle_secret():
             event.add_status(
                 BlockedStatus("Please authorize charm (see `authorize-charm` action)")
             )
@@ -493,26 +508,34 @@ class VaultOperatorCharm(CharmBase):
         """
         self._create_backend_directory()
         self._create_certs_directory()
-        self._install_vault_snap()
-        if not self._is_peer_relation_created():
+        try:
+            self._install_vault_snap()
+        except snap.SnapError as e:
+            logger.error("Failed to install Vault snap: %s", e)
+            return
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             return
         if not self._bind_address:
             return
-        if not self.unit.is_leader():
+        if not self.juju_facade.is_leader:
             if len(self._other_peer_node_api_addresses()) == 0:
                 return
             if not self.tls.ca_certificate_is_saved():
                 return
         self._generate_vault_config_file()
-        self._start_vault_service()
+        try:
+            self._start_vault_service()
+        except snap.SnapError as e:
+            logger.error("Failed to start Vault service: %s", e)
+            return
         self._set_peer_relation_node_api_address()
-        self._configure_pki_secrets_engine()
 
         vault = self._get_active_vault_client()
         if not vault:
             return
+        self._configure_pki_secrets_engine(vault)
         self._sync_vault_autounseal(vault)
-        self._sync_vault_kv()
+        self._sync_vault_kv(vault)
         self._sync_vault_pki()
 
         if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
@@ -533,17 +556,16 @@ class VaultOperatorCharm(CharmBase):
 
     def _on_new_vault_kv_client_attached(self, event: NewVaultKvClientAttachedEvent):
         """Handle vault-kv-client attached event."""
-        if not self.unit.is_leader():
+        if not self.juju_facade.is_leader:
             logger.debug("Only leader unit can handle a vault-kv request")
             return
-        relation = self.model.get_relation(
-            relation_name=KV_RELATION_NAME, relation_id=event.relation_id
-        )
-        if not relation:
-            logger.error("Relation not found for relation id %s", event.relation_id)
+        vault = self._get_active_vault_client()
+        if not vault:
+            logger.debug("Failed to get initialized Vault")
             return
         self._generate_kv_for_requirer(
-            relation=relation,
+            vault=vault,
+            relation=event.relation,
             app_name=event.app_name,
             unit_name=event.unit_name,
             mount_suffix=event.mount_suffix,
@@ -685,7 +707,7 @@ class VaultOperatorCharm(CharmBase):
             logger.error("Failed to restore vault. Vault API is not available.")
             event.fail(message="Failed to restore vault. Vault API is not available.")
             return
-        if not (approle := self._get_vault_approle()):
+        if not (approle := self._get_vault_approle_secret()):
             logger.error("Failed to authenticate to Vault.")
             event.fail(message="Failed to authenticate to Vault.")
             return
@@ -701,7 +723,7 @@ class VaultOperatorCharm(CharmBase):
             event.fail(message="Failed to restore snapshot. Vault API returned an error.")
             return
 
-        self._remove_juju_secret_by_label(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+        self.juju_facade.remove_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
 
         event.set_results({"restored": event.params.get("backup-id")})
 
@@ -725,7 +747,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _remove_node_from_raft_cluster(self):
         """Remove the node from the raft cluster."""
-        if not (approle := self._get_vault_approle()):
+        if not (approle := self._get_vault_approle_secret()):
             logger.error("Failed to authenticate to Vault")
             return
         api_address = self._api_address
@@ -754,7 +776,7 @@ class VaultOperatorCharm(CharmBase):
         """Check if the S3 pre-requisites are met."""
         if not self.unit.is_leader():
             return "Only leader unit can perform backup operations"
-        if not self._is_relation_created(S3_RELATION_NAME):
+        if not self.juju_facade.relation_exists(S3_RELATION_NAME):
             return "S3 relation not created"
         if missing_parameters := self._get_missing_s3_parameters():
             return "S3 parameters missing ({})".format(", ".join(missing_parameters))
@@ -794,6 +816,7 @@ class VaultOperatorCharm(CharmBase):
 
     def _generate_kv_for_requirer(
         self,
+        vault: VaultClient,
         relation: Relation,
         app_name: str,
         unit_name: str,
@@ -801,22 +824,86 @@ class VaultOperatorCharm(CharmBase):
         egress_subnets: List[str],
         nonce: str,
     ):
-        if not self.unit.is_leader():
+        if not self.juju_facade.is_leader:
             logger.debug("Only leader unit can handle a vault-kv request")
             return
         ca_certificate = self.tls.pull_tls_file_from_workload(File.CA)
         if not ca_certificate:
             logger.debug("Vault CA certificate not available")
             return
-        vault = self._get_active_vault_client()
-        if not vault:
-            return
-        vault_url = self._api_address
-        if not vault_url:
+        if not (vault_url := self._api_address):
+            logger.debug("Failed to get Vault URL when generating KV credentials, skipping")
             return
         mount = f"charm-{app_name}-{mount_suffix}"
-        unit_name_dash = unit_name.replace("/", "-")
-        policy_name = role_name = f"{mount}-{unit_name_dash}"
+        credentials_juju_secret_id = self._ensure_unit_credentials(
+            vault=vault,
+            relation=relation,
+            unit_name=unit_name,
+            mount=mount,
+            nonce=nonce,
+            egress_subnets=egress_subnets,
+        )
+        self.vault_kv.set_kv_data(
+            relation=relation,
+            mount=mount,
+            ca_certificate=ca_certificate,
+            vault_url=vault_url,
+            nonce=nonce,
+            credentials_juju_secret_id=credentials_juju_secret_id,
+        )
+        credential_nonces = self.vault_kv.get_credentials(relation).keys()
+        if nonce not in set(credential_nonces):
+            self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
+
+    def _get_relation_api_address(self, relation: Relation) -> str:
+        """Get the API address for the given relation."""
+        ingress_address = self.juju_facade.get_ingress_address(relation=relation)
+        return f"https://{ingress_address}:{VAULT_PORT}"
+
+    def _is_vault_kv_role_configured(
+        self,
+        vault: VaultClient,
+        label: str,
+        egress_subnets: List[str],
+        role_name: str,
+        credentials_juju_secret_id: str,
+    ) -> bool:
+        try:
+            role_secret_id = self.juju_facade.get_latest_secret_content(
+                label=label,
+                id=credentials_juju_secret_id,
+            ).get("role-secret-id")
+        except NoSuchSecretError:
+            return False
+        if not role_secret_id:
+            return False
+        role_data = vault.read_role_secret(role_name, role_secret_id)
+        if egress_subnets in role_data["cidr_list"]:
+            return True
+        return False
+
+    def _ensure_unit_credentials(
+        self,
+        vault: VaultClient,
+        relation: Relation,
+        unit_name: str,
+        mount: str,
+        nonce: str,
+        egress_subnets: List[str],
+    ) -> str:
+        policy_name = role_name = mount + "-" + unit_name.replace("/", "-")
+        juju_secret_label = self._get_vault_kv_secret_label(unit_name=unit_name)
+        current_credentials = self.vault_kv.get_credentials(relation)
+        credentials_juju_secret_id = current_credentials.get(nonce, None)
+        if self._is_vault_kv_role_configured(
+            vault=vault,
+            label=juju_secret_label,
+            egress_subnets=egress_subnets,
+            role_name=role_name,
+            credentials_juju_secret_id=credentials_juju_secret_id,
+        ):
+            logger.info("Vault KV role already configured for the provided egress subnets")
+            return credentials_juju_secret_id
         vault.enable_secrets_engine(SecretsBackend.KV_V2, mount)
         vault.create_or_update_policy_from_file(
             name=policy_name, path="src/templates/kv_mount.hcl", mount=mount
@@ -829,73 +916,27 @@ class VaultOperatorCharm(CharmBase):
             token_max_ttl="1h",
         )
         role_secret_id = vault.generate_role_secret_id(name=role_name, cidrs=egress_subnets)
-        # TODO bug: https://bugs.launchpad.net/juju/+bug/2075153
-        # Until the reference bug is fixed we must pass the secret ID here
-        # not to lose the secret://modeluuid:secretID format
-        current_credentials = self.vault_kv.get_credentials(relation)
-        juju_secret_label = self._get_vault_kv_secret_label(unit_name=unit_name)
-        secret = self._set_juju_secret(
-            label=juju_secret_label,
+        secret = self.juju_facade.set_app_secret_content(
             content={"role-id": role_id, "role-secret-id": role_secret_id},
-            id=current_credentials.get(nonce, None),
+            label=juju_secret_label,
         )
-        secret.grant(relation)
-        self.vault_kv.set_mount(relation, mount)
-        self.vault_kv.set_ca_certificate(relation, ca_certificate)
-        self.vault_kv.set_vault_url(relation, vault_url)
-        self.vault_kv.set_egress_subnets(relation, egress_subnets)
-        self.vault_kv.set_unit_credentials(relation, nonce, secret)
-        credential_nonces = self.vault_kv.get_credentials(relation).keys()
-        if nonce not in set(credential_nonces):
-            self.vault_kv.remove_unit_credentials(relation, nonce=nonce)
+        self.juju_facade.grant_secret(relation, secret=secret)
+        if not secret.id:
+            raise ValueError(
+                f"Unexpected error, just created secret {juju_secret_label!r} has no id"
+            )
+        return secret.id
 
-    def _set_juju_secret(
-        self,
-        label: str,
-        content: Dict[str, str],
-        description: str | None = None,
-        id: str | None = None,
-    ) -> Secret:
-        """Set the secret content at `label`, overwrite if it already exists.
-
-        Args:
-            label: The label of the secret.
-            content: The content of the secret.
-            description: The description of the secret.
-            id: ID of the secret that should be updated
-        """
-        try:
-            secret = self.model.get_secret(id=id, label=label)
-        except SecretNotFoundError:
-            return self.app.add_secret(content, label=label, description=description)
-        secret.set_content(content)
-        return secret
-
-    def _get_relation_api_address(self, relation: Relation) -> str | None:
-        """Fetch the api address from relation and returns it.
-
-        Example: "https://10.152.183.20:8200"
-        """
-        binding = self.model.get_binding(relation)
-        if binding is None:
-            return None
-        return f"https://{binding.network.ingress_address}:{VAULT_PORT}"
-
-    def _sync_vault_kv(self) -> None:
+    def _sync_vault_kv(self, vault: VaultClient) -> None:
         """Goes through all the vault-kv relations and sends necessary KV information."""
-        if not self.unit.is_leader():
+        if not self.juju_facade.is_leader:
             logger.debug("Only leader unit can handle a vault-kv request")
             return
-        outstanding_kv_requests = self.vault_kv.get_outstanding_kv_requests()
-        for kv_request in outstanding_kv_requests:
-            relation = self.model.get_relation(
-                relation_name=KV_RELATION_NAME, relation_id=kv_request.relation_id
-            )
-            if not relation:
-                logger.warning("Relation not found for relation id %s", kv_request.relation_id)
-                continue
+        kv_requests = self.vault_kv.get_kv_requests()
+        for kv_request in kv_requests:
             self._generate_kv_for_requirer(
-                relation=relation,
+                vault=vault,
+                relation=kv_request.relation,
                 app_name=kv_request.app_name,
                 unit_name=kv_request.unit_name,
                 mount_suffix=kv_request.mount_suffix,
@@ -908,7 +949,7 @@ class VaultOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request")
             return
-        if not self._tls_certificates_pki_relation_created():
+        if not self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME):
             logger.debug("TLS Certificates PKI relation not created")
             return
         vault = self._get_active_vault_client()
@@ -968,16 +1009,12 @@ class VaultOperatorCharm(CharmBase):
                 requirer_csr=pki_request,
             )
 
-    def _configure_pki_secrets_engine(self) -> None:  # noqa: C901
+    def _configure_pki_secrets_engine(self, vault: VaultClient) -> None:  # noqa: C901
         """Configure the PKI secrets engine."""
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a vault-pki certificate request, skipping")
             return
-        vault = self._get_active_vault_client()
-        if not vault:
-            logger.debug("Vault is not ready to handle a vault-pki certificate request, skipping")
-            return
-        if not self._tls_certificates_pki_relation_created():
+        if not self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME):
             logger.debug("TLS Certificates PKI relation not created, skipping")
             return
         if not self._common_name_config_is_valid():
@@ -1062,19 +1099,7 @@ class VaultOperatorCharm(CharmBase):
         common_name = self._get_config_common_name()
         return common_name != ""
 
-    def _tls_certificates_pki_relation_created(self) -> bool:
-        """Check if the TLS Certificates PKI relation is created."""
-        return self._is_relation_created(TLS_CERTIFICATES_PKI_RELATION_NAME)
-
-    def _is_relation_created(self, relation_name: str) -> bool:
-        """Check if the relation is created.
-
-        Args:
-            relation_name: Checked relation name
-        """
-        return bool(self.model.get_relation(relation_name))
-
-    def _get_vault_approle(self) -> AppRole | None:
+    def _get_vault_approle_secret(self) -> AppRole | None:
         """Get the approle details from the secret.
 
         Returns:
@@ -1083,21 +1108,13 @@ class VaultOperatorCharm(CharmBase):
                      not found or either of the values are not set.
         """
         try:
-            secret = self.model.get_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
-        except SecretNotFoundError:
+            role_id, secret_id = self.juju_facade.get_secret_content_values(
+                "role-id", "secret-id", label=VAULT_CHARM_APPROLE_SECRET_LABEL
+            )
+        except NoSuchSecretError:
+            logger.warning("Apprle secret not yet created")
             return None
-        content = secret.peek_content()
-        if not (role_id := content.get("role-id")) or not (secret_id := content.get("secret-id")):
-            return None
-        return AppRole(role_id, secret_id)
-
-    def _remove_juju_secret_by_label(self, label: str):
-        """Remove the specified secret if it exists."""
-        try:
-            juju_secret = self.model.get_secret(label=label)
-            juju_secret.remove_all_revisions()
-        except SecretNotFoundError:
-            return
+        return AppRole(role_id, secret_id) if role_id and secret_id else None
 
     def _install_vault_snap(self) -> None:
         """Installs the Vault snap in the machine."""
@@ -1131,25 +1148,6 @@ class VaultOperatorCharm(CharmBase):
         vault_snap = snap_cache[VAULT_SNAP_NAME]
         vault_snap.start(services=["vaultd"])
         logger.debug("Vault service started")
-
-    def _get_juju_secret_field(self, label: str, field: str) -> str | None:
-        """Retrieve the latest revision of the secret content from Juju.
-
-        Args:
-            label: The label of the secret.
-            field: The field to retrieve from the secret.
-
-        Returns:
-            The value of the field is returned, or `None` if the field does not
-            exist.
-            If the secret does not exist, `None` is returned.
-        """
-        try:
-            juju_secret = self.model.get_secret(label=label)
-        except SecretNotFoundError:
-            return None
-        content = juju_secret.get_content(refresh=True)
-        return content.get(field)
 
     def _generate_vault_config_file(self) -> None:
         """Create the Vault config file and push it to the Machine."""
@@ -1215,27 +1213,24 @@ class VaultOperatorCharm(CharmBase):
             self.tls.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA),
         )
 
-    def _is_peer_relation_created(self) -> bool:
-        """Check if the peer relation is created."""
-        return bool(self.model.get_relation(PEER_RELATION_NAME))
-
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""
-        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
-        assert peer_relation
         assert self._api_address
-        peer_relation.data[self.unit].update({"node_api_address": self._api_address})
+        self.juju_facade.set_unit_relation_data(
+            data={"node_api_address": self._api_address},
+            name=PEER_RELATION_NAME,
+        )
 
     def _get_peer_relation_node_api_addresses(self) -> List[str]:
         """Return the list of peer unit addresses."""
-        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
-        node_api_addresses = []
-        if not peer_relation:
-            return []
-        for peer in peer_relation.units:
-            if "node_api_address" in peer_relation.data[peer]:
-                node_api_addresses.append(peer_relation.data[peer]["node_api_address"])
-        return node_api_addresses
+        peer_relation_data = self.juju_facade.get_remote_units_relation_data(
+            name=PEER_RELATION_NAME,
+        )
+        return [
+            databag["node_api_address"]
+            for databag in peer_relation_data
+            if "node_api_address" in databag
+        ]
 
     def _other_peer_node_api_addresses(self) -> List[str]:
         """Return the list of other peer unit addresses.
@@ -1324,16 +1319,7 @@ class VaultOperatorCharm(CharmBase):
         Returns:
             str: Bind address
         """
-        peer_relation = self.model.get_relation(PEER_RELATION_NAME)
-        if not peer_relation:
-            return None
-        try:
-            binding = self.model.get_binding(peer_relation)
-            if not binding or not binding.network.bind_address:
-                return None
-            return str(binding.network.bind_address)
-        except ModelError:
-            return None
+        return self.juju_facade.get_bind_address(relation_name=PEER_RELATION_NAME)
 
     @property
     def _api_address(self) -> str | None:

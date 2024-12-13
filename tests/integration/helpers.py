@@ -227,14 +227,17 @@ async def deploy_vault(ops_test: OpsTest, charm_path, num_vaults) -> None:
     await deploy_if_not_exists(ops_test.model, APP_NAME, charm_path, num_units=num_vaults)
 
 
-async def deploy_vault_and_wait(ops_test: OpsTest, charm_path, num_units) -> None:
+async def deploy_vault_and_wait(
+    ops_test: OpsTest, charm_path, num_units, status: str | None = None
+) -> None:
     await deploy_vault(ops_test, charm_path, num_units)
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         assert ops_test.model
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             wait_for_at_least_units=num_units,
             timeout=1000,
+            status=status,
         )
 
 

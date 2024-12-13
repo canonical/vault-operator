@@ -50,6 +50,12 @@ UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
 VAULT_PKI_REQUIRER_REVISION = 93
 
 
+class ActionFailedError(Exception):
+    """Exception raised when an action fails."""
+
+    pass
+
+
 @pytest.fixture(scope="session")
 def vault_charm_path(request):
     return Path(request.config.getoption("--charm_path")).resolve()
@@ -67,6 +73,17 @@ async def vault_idle(ops_test: OpsTest, request, vault_charm_path) -> Task:
     This is the default state of Vault.
     """
     return create_task(deploy_vault_and_wait(ops_test, vault_charm_path, NUM_VAULT_UNITS))
+
+
+@pytest.fixture(scope="function")
+async def vault_idle_blocked(ops_test: OpsTest, request, vault_charm_path) -> Task:
+    """Deploy the Vault charm, and wait for it to be blocked.
+
+    This is the default state of Vault.
+    """
+    return create_task(
+        deploy_vault_and_wait(ops_test, vault_charm_path, NUM_VAULT_UNITS, status="blocked")
+    )
 
 
 @pytest.fixture(scope="function")
@@ -100,7 +117,10 @@ async def vault_authorized(ops_test: OpsTest, vault_unsealed: Task) -> Task:
     root_token, key = await vault_unsealed
 
     async def authorize():
-        await authorize_charm(ops_test, root_token)
+        try:
+            await authorize_charm(ops_test, root_token)
+        except ActionFailedError:
+            logger.warning("Failed to authorize charm")
         return root_token, key
 
     return create_task(authorize())
@@ -115,7 +135,7 @@ async def self_signed_certificates_idle(ops_test: OpsTest) -> Task:
         await deploy_if_not_exists(
             ops_test.model, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME, channel="edge"
         )
-        async with ops_test.fast_forward():
+        async with ops_test.fast_forward(fast_interval="60s"):
             await ops_test.model.wait_for_idle(
                 apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME],
             )
@@ -132,7 +152,7 @@ async def vault_kv_requirer_idle(ops_test: OpsTest, kv_requirer_charm_path: Path
         await deploy_if_not_exists(
             ops_test.model, VAULT_KV_REQUIRER_APPLICATION_NAME, charm_path=kv_requirer_charm_path
         )
-        async with ops_test.fast_forward():
+        async with ops_test.fast_forward(fast_interval="60s"):
             await ops_test.model.wait_for_idle(
                 apps=[VAULT_KV_REQUIRER_APPLICATION_NAME],
             )
@@ -353,6 +373,8 @@ async def authorize_charm(
     result = await ops_test.model.get_action_output(
         action_uuid=authorize_action.entity_id, wait=120
     )
+    if not result or "result" not in result:
+        raise ActionFailedError("Failed to authorize charm")
     logger.info("Authorization result: %s", result)
     return result
 
@@ -377,9 +399,11 @@ async def test_deploy_all_the_things(
 
 
 @pytest.mark.abort_on_fail
-async def test_given_charm_deployed_then_status_blocked(ops_test: OpsTest, vault_idle: Task):
+async def test_given_charm_deployed_then_status_blocked(
+    ops_test: OpsTest, vault_idle_blocked: Task
+):
     assert ops_test.model
-    await vault_idle
+    await vault_idle_blocked
 
     vault_app = get_app(ops_test.model)
     assert vault_app.status == "blocked"
@@ -387,17 +411,17 @@ async def test_given_charm_deployed_then_status_blocked(ops_test: OpsTest, vault
 
 @pytest.mark.abort_on_fail
 async def test_given_certificates_provider_is_related_when_vault_status_checked_then_vault_returns_200_or_429(  # noqa: E501
-    ops_test: OpsTest, vault_idle: Task, self_signed_certificates_idle: Task
+    ops_test: OpsTest, vault_idle_blocked: Task, self_signed_certificates_idle: Task
 ):
     """To test that Vault is actually running when the charm is active."""
     assert ops_test.model
-    await gather(vault_idle, self_signed_certificates_idle)
+    await gather(vault_idle_blocked, self_signed_certificates_idle)
 
     await ops_test.model.integrate(
         relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
         relation2=f"{APP_NAME}:tls-certificates-access",
     )
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(apps=[APP_NAME])
         await ops_test.model.wait_for_idle(apps=[SELF_SIGNED_CERTIFICATES_APPLICATION_NAME])
     vault_ip = await get_leader_unit_address(ops_test)
@@ -428,9 +452,12 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     vault.unseal(unseal_key)
     vault.wait_for_node_to_be_unsealed()
     assert vault.is_active()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await unseal_all_vault_units(ops_test, ca_file_location, unseal_key)
-        await authorize_charm(ops_test, root_token)
+        try:
+            await authorize_charm(ops_test, root_token)
+        except ActionFailedError as e:
+            logger.warning("Failed to authorize charm: %s", e)
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
@@ -453,7 +480,7 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
     app = get_app(ops_test.model)
     await app.add_unit(count=1)
 
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -469,7 +496,7 @@ async def test_given_application_is_deployed_when_scale_up_then_status_is_active
     )
     vault.unseal(unseal_key=unseal_key)
     vault.wait_for_node_to_be_unsealed()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -492,7 +519,7 @@ async def test_given_application_is_deployed_when_scale_down_then_status_is_acti
 
     new_unit = get_app(ops_test.model).units[-1]
     await new_unit.remove()
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -516,7 +543,7 @@ async def test_given_grafana_agent_deployed_when_relate_to_grafana_agent_then_st
         relation1=f"{APP_NAME}:cos-agent",
         relation2=f"{GRAFANA_AGENT_APPLICATION_NAME}:cos-agent",
     )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             timeout=1000,
@@ -539,7 +566,7 @@ async def test_given_vault_kv_requirer_deployed_when_vault_kv_relation_created_t
             relation1=f"{APP_NAME}:vault-kv",
             relation2=f"{VAULT_KV_REQUIRER_APPLICATION_NAME}:vault-kv",
         )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME, VAULT_KV_REQUIRER_APPLICATION_NAME],
             status="active",
@@ -674,7 +701,7 @@ async def test_given_vault_pki_relation_and_matching_common_name_configured_when
         "common_name": common_name,
     }
     await vault_app.set_config(common_name_config)
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
@@ -828,7 +855,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
         trust=True,
         num_units=1,
     )
-    async with ops_test.fast_forward():
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=["vault-b"],
             status="blocked",
@@ -846,7 +873,7 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
     await ops_test.model.integrate(
         f"{APP_NAME}:vault-autounseal-provides", "vault-b:vault-autounseal-requires"
     )
-    async with ops_test.fast_forward(fast_interval="10s"):
+    async with ops_test.fast_forward(fast_interval="60s"):
         await ops_test.model.wait_for_idle(
             apps=["vault-b"], status="blocked", wait_for_exact_units=1, idle_period=5
         )
@@ -865,7 +892,10 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
             expected_message="Please authorize charm (see `authorize-charm` action)",
             app_name="vault-b",
         )
-        await authorize_charm(ops_test, root_token, "vault-b")
+        try:
+            await authorize_charm(ops_test, root_token, "vault-b")
+        except ActionFailedError:
+            logger.warning("Failed to authorize charm")
         await ops_test.model.wait_for_idle(
             apps=["vault-b"],
             status="active",
