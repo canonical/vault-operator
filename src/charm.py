@@ -381,6 +381,7 @@ class VaultOperatorCharm(CharmBase):
 
         logger.info("Authorizing the charm to interact with Vault")
         if not self._api_address:
+            logger.warning("API address is not available when authorizing charm")
             event.fail("API address is not available.")
             return
         if not self.tls.tls_file_available_in_charm(File.CA):
@@ -388,9 +389,11 @@ class VaultOperatorCharm(CharmBase):
             return
         vault = self._get_vault_client()
         if not vault:
+            logger.warning("Failed to initialize the Vault client when authorizing charm")
             event.fail("Failed to initialize the Vault client")
             return
         if not vault.authenticate(Token(token)):
+            logger.warning("Failed to authenticate with Vault when authorizing charm")
             event.fail("Failed to authenticate with Vault")
             return
         try:
