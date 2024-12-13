@@ -91,3 +91,4 @@ executionEnvironments = [
   { root = "src" },
   { root = "tests"}
 ]
+reportMissingParameterType = true

@@ -37,7 +37,7 @@ def get_app(model: Model, app_name: str = APP_NAME) -> Application:
     return app
 
 
-def has_relation(app: Application, relation_name) -> bool:
+def has_relation(app: Application, relation_name: str) -> bool:
     """Check if the application has the relation with the given name.
 
     This is a hack since `app.related_applications` does not seem to work.
@@ -153,7 +153,7 @@ async def wait_for_certificate_to_be_provided(ops_test: OpsTest) -> None:
     raise TimeoutError("Timed out waiting for certificate to be provided.")
 
 
-async def get_leader_unit(model, application_name: str) -> Unit:
+async def get_leader_unit(model: Model, application_name: str) -> Unit:
     """Return the leader unit for the given application."""
     for unit in model.units.values():
         if unit.application == application_name and await unit.is_leader_from_status():
@@ -221,14 +221,14 @@ async def wait_for_status_message(
     )
 
 
-async def deploy_vault(ops_test: OpsTest, charm_path, num_vaults) -> None:
+async def deploy_vault(ops_test: OpsTest, charm_path: Path, num_vaults: int) -> None:
     """Ensure the Vault charm is deployed."""
     assert ops_test.model
     await deploy_if_not_exists(ops_test.model, APP_NAME, charm_path, num_units=num_vaults)
 
 
 async def deploy_vault_and_wait(
-    ops_test: OpsTest, charm_path, num_units, status: str | None = None
+    ops_test: OpsTest, charm_path: Path, num_units: int, status: str | None = None
 ) -> None:
     await deploy_vault(ops_test, charm_path, num_units)
     async with ops_test.fast_forward(fast_interval="60s"):
