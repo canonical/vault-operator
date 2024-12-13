@@ -57,17 +57,19 @@ class ActionFailedError(Exception):
 
 
 @pytest.fixture(scope="session")
-def vault_charm_path(request):
-    return Path(request.config.getoption("--charm_path")).resolve()
+def vault_charm_path(request: pytest.FixtureRequest) -> Path:
+    return Path(str(request.config.getoption("--charm_path"))).resolve()
 
 
 @pytest.fixture(scope="session")
-def kv_requirer_charm_path(request) -> Path:
-    return Path(request.config.getoption("--kv_requirer_charm_path")).resolve()
+def kv_requirer_charm_path(request: pytest.FixtureRequest) -> Path:
+    return Path(str(request.config.getoption("--kv_requirer_charm_path"))).resolve()
 
 
 @pytest.fixture(scope="function")
-async def vault_idle(ops_test: OpsTest, request, vault_charm_path) -> Task:
+async def vault_idle(
+    ops_test: OpsTest, request: pytest.FixtureRequest, vault_charm_path: Path
+) -> Task:
     """Deploy the Vault charm, and wait for it to be blocked.
 
     This is the default state of Vault.
@@ -76,7 +78,9 @@ async def vault_idle(ops_test: OpsTest, request, vault_charm_path) -> Task:
 
 
 @pytest.fixture(scope="function")
-async def vault_idle_blocked(ops_test: OpsTest, request, vault_charm_path) -> Task:
+async def vault_idle_blocked(
+    ops_test: OpsTest, request: pytest.FixtureRequest, vault_charm_path: Path
+) -> Task:
     """Deploy the Vault charm, and wait for it to be blocked.
 
     This is the default state of Vault.
@@ -842,8 +846,8 @@ async def test_given_vault_is_deployed_when_integrate_another_vault_then_autouns
     ops_test: OpsTest,
     vault_authorized: Task,
     self_signed_certificates_idle: Task,
-    request,
-    vault_charm_path,
+    request: pytest.FixtureRequest,
+    vault_charm_path: Path,
 ):
     assert ops_test.model
     await vault_authorized

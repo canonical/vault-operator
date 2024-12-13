@@ -5,6 +5,7 @@
 import logging
 import secrets
 from pathlib import Path
+from typing import Any
 
 from charms.vault_k8s.v0.juju_facade import JujuFacade, NoSuchStorageError
 from charms.vault_k8s.v0.vault_kv import (
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class VaultKVRequirerCharm(CharmBase):
-    def __init__(self, *args):
+    def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)
         self.vault_kv = VaultKvRequires(self, "vault-kv", mount_suffix="kv")

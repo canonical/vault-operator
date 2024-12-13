@@ -354,7 +354,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
     @patch("ops.model.Model.get_binding")
     def test_given_autounseal_details_available_when_configure_then_transit_stanza_generated(
-        self, mock_get_binding
+        self, mock_get_binding: MagicMock
     ):
         key_name = "my key"
         approle_id = "my approle id"
@@ -436,7 +436,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
     @patch("ops.model.Model.get_binding")
     def test_given_outstanding_autounseal_requests_when_configure_then_credentials_are_set(
-        self, mock_get_binding
+        self, mock_get_binding: MagicMock
     ):
         key_name = "my key"
         approle_id = "my approle id"
@@ -574,7 +574,7 @@ class TestCharmConfigure(VaultCharmFixtures):
     @patch("charm.VaultKvProvides.get_kv_requests")
     def test_given_related_kv_client_unit_egress_is_updated_when_configure_then_secret_content_is_updated(
         self,
-        mock_kv_provides_get_kv_requests,
+        mock_kv_provides_get_kv_requests: MagicMock,
     ):
         nonce = "123123"
         self.mock_vault.configure_mock(

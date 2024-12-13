@@ -10,7 +10,7 @@ import logging
 import socket
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
@@ -194,7 +194,7 @@ def config_file_content_matches(existing_content: str, new_content: str) -> bool
 class VaultOperatorCharm(CharmBase):
     """Machine Charm for Vault."""
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)
         self.machine = Machine()
