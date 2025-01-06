@@ -34,7 +34,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum, auto
-from typing import FrozenSet, TextIO
+from typing import FrozenSet, MutableMapping, TextIO
 
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
     CertificateTransferProvides,
@@ -77,7 +77,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 3
 
 
 SEND_CA_CERT_RELATION_NAME = "send-ca-cert"
@@ -100,7 +100,7 @@ class LogAdapter(logging.LoggerAdapter):
 
     prefix = "vault_managers"
 
-    def process(self, msg, kwargs):
+    def process(self, msg: str, kwargs: MutableMapping) -> tuple[str, MutableMapping]:
         """Decides the format for the prepended text."""
         return f"[{self.prefix}] {msg}", kwargs
 
@@ -162,6 +162,14 @@ class WorkloadBase(ABC):
         """Stop a service in the workload."""
         pass
 
+    @abstractmethod
+    def is_accessible(self) -> bool:
+        """Return whether the workload is accessible.
+
+        For a container, this would check if we can connect to pebble.
+        """
+        pass
+
 
 class VaultCertsError(Exception):
     """Exception raised when a vault certificate is not found."""
@@ -180,7 +188,7 @@ class File(Enum):
     AUTOUNSEAL_CA = auto()
 
 
-class VaultTLSManager(Object):
+class TLSManager(Object):
     """This class configures the certificates within Vault."""
 
     def __init__(
@@ -193,7 +201,7 @@ class VaultTLSManager(Object):
         sans_dns: FrozenSet[str] = frozenset(),
         sans_ip: FrozenSet[str] = frozenset(),
     ):
-        """Create a new VaultTLSManager object.
+        """Create a new TLSManager object.
 
         Args:
             charm: CharmBase
@@ -269,6 +277,9 @@ class VaultTLSManager(Object):
 
     def _configure_self_signed_certificates(self, _: EventBase) -> None:
         """Configure the charm with self signed certificates."""
+        if not self.workload.is_accessible():
+            logger.debug("Workload is not accessible")
+            return
         if self.charm.unit.is_leader() and not self.ca_certificate_secret_exists():
             ca_private_key, ca_certificate = generate_vault_ca_certificate()
             self.juju_facade.set_app_secret_content(
@@ -321,6 +332,9 @@ class VaultTLSManager(Object):
 
         Retrieve assigned certificate and private key from the relation and save them to the workload.
         """
+        if not self.workload.is_accessible():
+            logger.debug("Workload is not accessible")
+            return
         if not self.tls_access:
             logger.debug("No TLS access relation.")
             return
@@ -551,7 +565,7 @@ def existing_certificate_is_self_signed(ca_certificate: Certificate) -> bool:
     return ca_certificate.common_name == VAULT_CA_SUBJECT
 
 
-class VaultNaming:
+class Naming:
     """Computes names for Vault features.
 
     This class is used to compute names for Vault features based on the charm's
@@ -579,7 +593,7 @@ class VaultNaming:
         return f"{cls.approle_prefix}{relation_id}"
 
 
-class VaultAutounsealProviderManager:
+class AutounsealProviderManager:
     """Encapsulates the auto-unseal functionality.
 
     This class provides the business logic for auto-unseal functionality in
@@ -635,7 +649,7 @@ class VaultAutounsealProviderManager:
         """
         existing_keys = self._get_existing_keys()
         relation_key_names = [
-            VaultNaming.key_name(relation.id)
+            Naming.key_name(relation.id)
             for relation in self._juju_facade.get_active_relations(self._provides.relation_name)
         ]
         orphaned_keys = [key for key in existing_keys if key not in relation_key_names]
@@ -663,7 +677,7 @@ class VaultAutounsealProviderManager:
         """Delete roles that are no longer associated with an autounseal Juju relation."""
         existing_roles = self._get_existing_roles()
         relation_role_names = [
-            VaultNaming.approle_name(relation.id)
+            Naming.approle_name(relation.id)
             for relation in self._juju_facade.get_active_relations(self._provides.relation_name)
         ]
         for role in existing_roles:
@@ -675,7 +689,7 @@ class VaultAutounsealProviderManager:
         """Delete policies that are no longer associated with an autounseal Juju relation."""
         existing_policies = self._get_existing_policies()
         relation_policy_names = [
-            VaultNaming.policy_name(relation.id)
+            Naming.policy_name(relation.id)
             for relation in self._juju_facade.get_active_relations(self._provides.relation_name)
         ]
         for policy in existing_policies:
@@ -697,9 +711,9 @@ class VaultAutounsealProviderManager:
         Returns:
             A tuple containing the key name, role ID, and approle secret ID.
         """
-        key_name = VaultNaming.key_name(relation.id)
-        policy_name = VaultNaming.policy_name(relation.id)
-        approle_name = VaultNaming.approle_name(relation.id)
+        key_name = Naming.key_name(relation.id)
+        policy_name = Naming.policy_name(relation.id)
+        approle_name = Naming.approle_name(relation.id)
         self._create_key(key_name)
         policy_content = AUTOUNSEAL_POLICY.format(mount=self.mount_path, key_name=key_name)
         self._client.create_or_update_policy(
@@ -728,11 +742,11 @@ class VaultAutounsealProviderManager:
 
     def _get_existing_roles(self) -> list[str]:
         output = self._client.list("auth/approle/role")
-        return [role for role in output if role.startswith(VaultNaming.approle_prefix)]
+        return [role for role in output if role.startswith(Naming.approle_prefix)]
 
     def _get_existing_policies(self) -> list[str]:
         output = self._client.list("sys/policy")
-        return [policy for policy in output if policy.startswith(VaultNaming.policy_prefix)]
+        return [policy for policy in output if policy.startswith(Naming.policy_prefix)]
 
 
 @dataclass
@@ -746,7 +760,7 @@ class AutounsealConfigurationDetails:
     ca_cert_path: str
 
 
-class VaultAutounsealRequirerManager:
+class AutounsealRequirerManager:
     """Encapsulates the auto-unseal functionality from the Requirer Perspective.
 
     In other words, this manages the feature from the perspective of the Vault

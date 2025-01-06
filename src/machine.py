@@ -137,3 +137,14 @@ class Machine(WorkloadBase):
             if proc.name() == process:
                 return proc.pid
         return None
+
+    def is_accessible(self) -> bool:
+        """Return True for the machine workload.
+
+        Unlike a workload which runs in a container, the machine workload
+        is always accessible, since it runs on the host machine.
+
+        Returns:
+            True
+        """
+        return True
