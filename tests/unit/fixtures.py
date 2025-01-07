@@ -10,6 +10,7 @@ from charms.vault_k8s.v0.vault_client import VaultClient
 from charms.vault_k8s.v0.vault_managers import (
     AutounsealProviderManager,
     AutounsealRequirerManager,
+    PKIManager,
     TLSManager,
 )
 from charms.vault_k8s.v0.vault_s3 import S3
@@ -26,6 +27,7 @@ class VaultCharmFixtures:
     patcher_vault_autounseal_requirer_manager = patch(
         "charm.AutounsealRequirerManager", autospec=AutounsealRequirerManager
     )
+    patcher_pki_manager = patch("charm.PKIManager", autospec=PKIManager)
     patcher_s3_requirer = patch("charm.S3Requirer", autospec=S3Requirer)
     patcher_s3 = patch("charm.S3", autospec=S3)
     patcher_socket_fqdn = patch("socket.getfqdn")
@@ -60,6 +62,7 @@ class VaultCharmFixtures:
         self.mock_vault_autounseal_manager = (
             VaultCharmFixtures.patcher_vault_autounseal_provider_manager.start().return_value
         )
+        self.mock_pki_manager = VaultCharmFixtures.patcher_pki_manager.start().return_value
         self.mock_vault_autounseal_requirer_manager = (
             VaultCharmFixtures.patcher_vault_autounseal_requirer_manager.start().return_value
         )
