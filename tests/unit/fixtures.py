@@ -11,6 +11,7 @@ from charms.vault_k8s.v0.vault_client import VaultClient
 from charms.vault_k8s.v0.vault_managers import (
     AutounsealProviderManager,
     AutounsealRequirerManager,
+    BackupManager,
     KVManager,
     PKIManager,
     TLSManager,
@@ -45,6 +46,9 @@ class VaultCharmFixtures:
                 patch("charm.S3Requirer", autospec=S3Requirer)
             ).return_value
             self.mock_machine = stack.enter_context(patch("charm.Machine")).return_value
+            self.mock_backup_manager = stack.enter_context(
+                patch("charm.BackupManager", autospec=BackupManager)
+            ).return_value
 
             self.mock_socket_fqdn = stack.enter_context(patch("socket.getfqdn"))
             self.mock_pki_requirer_get_assigned_certificate = stack.enter_context(
@@ -75,7 +79,6 @@ class VaultCharmFixtures:
                 patch("charm.VaultKvProvides.set_kv_data")
             )
             self.mock_snap_cache = stack.enter_context(patch("charm.snap.SnapCache"))
-            self.mock_s3 = stack.enter_context(patch("charm.S3"))
             yield
 
     @pytest.fixture(autouse=True)
