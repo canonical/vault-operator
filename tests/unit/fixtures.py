@@ -14,6 +14,7 @@ from charms.vault_k8s.v0.vault_managers import (
     BackupManager,
     KVManager,
     PKIManager,
+    RaftManager,
     TLSManager,
 )
 
@@ -48,6 +49,9 @@ class VaultCharmFixtures:
             self.mock_machine = stack.enter_context(patch("charm.Machine")).return_value
             self.mock_backup_manager = stack.enter_context(
                 patch("charm.BackupManager", autospec=BackupManager)
+            ).return_value
+            self.mock_raft_manager = stack.enter_context(
+                patch("charm.RaftManager", autospec=RaftManager)
             ).return_value
 
             self.mock_socket_fqdn = stack.enter_context(patch("socket.getfqdn"))
