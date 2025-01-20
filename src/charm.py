@@ -52,6 +52,7 @@ from charms.vault_k8s.v0.vault_managers import (
     KVManager,
     ManagerError,
     PKIManager,
+    RaftManager,
     TLSManager,
     VaultCertsError,
 )
@@ -254,10 +255,13 @@ class VaultOperatorCharm(CharmBase):
         ]
         for event in configure_events:
             self.framework.observe(event, self._configure)
-        self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
         self.framework.observe(
             self.vault_kv.on.vault_kv_client_detached, self._on_vault_kv_client_detached
         )
+
+        # Actions
+        self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
+        self.framework.observe(self.on.bootstrap_raft_action, self._on_bootstrap_raft_action)
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
@@ -441,6 +445,25 @@ class VaultOperatorCharm(CharmBase):
             logger.exception("Vault returned an error while authorizing the charm")
             event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
             return
+
+    def _on_bootstrap_raft_action(self, event: ActionEvent):
+        """Bootstraps the raft cluster when a single node is present.
+
+        This is useful when Vault has lost quorum. The application must first
+        be reduced to a single unit.
+        """
+        if not self._api_address:
+            event.fail(message="Network bind address is not available")
+            return
+
+        try:
+            manager = RaftManager(self, self.machine, VAULT_SNAP_NAME, VAULT_STORAGE_PATH)
+            manager.bootstrap(self._node_id, self._api_address)
+        except ManagerError as e:
+            logger.error("Failed to bootstrap raft: %s", e)
+            event.fail(message=f"Failed to bootstrap raft: {e}")
+            return
+        event.set_results({"result": "Raft cluster bootstrapped successfully."})
 
     def _get_vault_client(self) -> VaultClient | None:
         if not self._api_address:
