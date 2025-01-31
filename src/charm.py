@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List
 
-import hcl
 from charms.data_platform_libs.v0.s3 import S3Requirer
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.operator_libs_linux.v2 import snap
@@ -39,6 +38,12 @@ from charms.vault_k8s.v0.vault_client import (
     VaultClient,
     VaultClientError,
 )
+from charms.vault_k8s.v0.vault_helpers import (
+    common_name_config_is_valid,
+    config_file_content_matches,
+    render_vault_config_file,
+    seal_type_has_changed,
+)
 from charms.vault_k8s.v0.vault_kv import (
     VaultKvClientDetachedEvent,
     VaultKvProvides,
@@ -56,7 +61,6 @@ from charms.vault_k8s.v0.vault_managers import (
     TLSManager,
     VaultCertsError,
 )
-from jinja2 import Environment, FileSystemLoader
 from ops import ActionEvent, BlockedStatus, ErrorStatus
 from ops.charm import CharmBase, CollectStatusEvent, RemoveEvent
 from ops.main import main
@@ -95,100 +99,6 @@ VAULT_SNAP_CHANNEL = "1.16/stable"
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2300"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
-
-
-def _render_vault_config_file(
-    default_lease_ttl: str,
-    max_lease_ttl: str,
-    cluster_address: str,
-    api_address: str,
-    tls_cert_file: str,
-    tls_key_file: str,
-    tcp_address: str,
-    raft_storage_path: str,
-    node_id: str,
-    retry_joins: List[Dict[str, str]],
-    autounseal_details: AutounsealConfigurationDetails | None = None,
-) -> str:
-    jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR_PATH))
-    template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
-    content = template.render(
-        default_lease_ttl=default_lease_ttl,
-        max_lease_ttl=max_lease_ttl,
-        cluster_address=cluster_address,
-        api_address=api_address,
-        tls_cert_file=tls_cert_file,
-        tls_key_file=tls_key_file,
-        tcp_address=tcp_address,
-        raft_storage_path=raft_storage_path,
-        node_id=node_id,
-        retry_joins=retry_joins,
-        autounseal_address=autounseal_details.address if autounseal_details else None,
-        autounseal_key_name=autounseal_details.key_name if autounseal_details else None,
-        autounseal_mount_path=autounseal_details.mount_path if autounseal_details else None,
-        autounseal_token=autounseal_details.token if autounseal_details else None,
-        autounseal_tls_ca_cert=autounseal_details.ca_cert_path if autounseal_details else None,
-    )
-    return content
-
-
-def _seal_types_are_different(content_a: str, content_b: str) -> bool:
-    """Check if the seal type has changed between two versions of the Vault configuration file.
-
-    Currently only checks if the transit stanza is present or not, since this
-    is all we support. This function will need to be extended to support
-    alternate cases if and when we support them.
-    """
-    config_a = hcl.loads(content_a)
-    config_b = hcl.loads(content_b)
-    return _contains_transit_stanza(config_a) != _contains_transit_stanza(config_b)
-
-
-def _contains_transit_stanza(config: dict) -> bool:
-    if "seal" in config and "transit" in config["seal"]:
-        return True
-    return False
-
-
-def config_file_content_matches(existing_content: str, new_content: str) -> bool:
-    """Return whether two Vault config file contents match.
-
-    We check if the retry_join addresses match, and then we check if the rest of the config
-    file matches.
-
-    Returns:
-        bool: Whether the vault config file content matches
-    """
-    existing_config_hcl = hcl.loads(existing_content)
-    new_content_hcl = hcl.loads(new_content)
-    if not existing_config_hcl:
-        logger.info("Existing config file is empty")
-        return existing_config_hcl == new_content_hcl
-    if not new_content_hcl:
-        logger.info("New config file is empty")
-        return existing_config_hcl == new_content_hcl
-
-    new_retry_joins = new_content_hcl["storage"]["raft"].pop("retry_join", [])
-
-    try:
-        existing_retry_joins = existing_config_hcl["storage"]["raft"].pop("retry_join", [])
-    except KeyError:
-        existing_retry_joins = []
-
-    # If there is only one retry join, it is a dict
-    if isinstance(new_retry_joins, dict):
-        new_retry_joins = [new_retry_joins]
-    if isinstance(existing_retry_joins, dict):
-        existing_retry_joins = [existing_retry_joins]
-
-    new_retry_join_api_addresses = {address["leader_api_addr"] for address in new_retry_joins}
-    existing_retry_join_api_addresses = {
-        address["leader_api_addr"] for address in existing_retry_joins
-    }
-    return (
-        new_retry_join_api_addresses == existing_retry_join_api_addresses
-        and new_content_hcl == existing_config_hcl
-    )
 
 
 class VaultOperatorCharm(CharmBase):
@@ -477,10 +387,9 @@ class VaultOperatorCharm(CharmBase):
 
     def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
         """Handle the collect status event."""
-        if (
-            self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME)
-            and not self._common_name_config_is_valid()
-        ):
+        if self.juju_facade.relation_exists(
+            TLS_CERTIFICATES_PKI_RELATION_NAME
+        ) and not common_name_config_is_valid(self.juju_facade.get_string_config("common_name")):
             event.add_status(
                 BlockedStatus(
                     "Common name is not set in the charm config, "
@@ -834,11 +743,6 @@ class VaultOperatorCharm(CharmBase):
             raise ValueError("Invalid config max_lease_ttl")
         return max_lease_ttl
 
-    def _common_name_config_is_valid(self) -> bool:
-        """Return whether the config value for the common name is valid."""
-        common_name = self.juju_facade.get_string_config("common_name")
-        return common_name != ""
-
     def _get_vault_approle_secret(self) -> AppRole | None:
         """Get the approle details from the secret.
 
@@ -903,7 +807,9 @@ class VaultOperatorCharm(CharmBase):
 
         autounseal_configuration_details = self._get_vault_autounseal_configuration()
 
-        content = _render_vault_config_file(
+        content = render_vault_config_file(
+            config_template_path=CONFIG_TEMPLATE_DIR_PATH,
+            config_template_name=CONFIG_TEMPLATE_NAME,
             default_lease_ttl=self._get_default_lease_ttl(),
             max_lease_ttl=self._get_max_lease_ttl(),
             cluster_address=self._cluster_address,
@@ -930,7 +836,7 @@ class VaultOperatorCharm(CharmBase):
             # If the seal type has changed, we need to restart Vault to apply
             # the changes. SIGHUP is currently only supported as a beta feature
             # for the enterprise version in Vault 1.16+
-            if _seal_types_are_different(existing_content, content):
+            if seal_type_has_changed(existing_content, content):
                 if self._vault_service_is_running():
                     self.machine.restart(VAULT_SNAP_NAME)
 
