@@ -29,7 +29,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
-            "Common name is not set in the charm config, " "cannot configure PKI secrets engine"
+            "Common name is not set in the charm config, cannot configure PKI secrets engine"
         )
 
     def test_given_peer_relation_not_created_when_collect_unit_status_then_status_is_waiting(self):
