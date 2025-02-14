@@ -138,6 +138,7 @@ class VaultOperatorCharm(CharmBase):
             port=VAULT_PORT,
             strip_prefix=True,
             scheme=lambda: "https",
+            redirect_https=True,
         )
         certificate_requests = [self._get_certificate_request(common_name)] if common_name else []
         self.tls_certificates_pki = TLSCertificatesRequiresV4(
