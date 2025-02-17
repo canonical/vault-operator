@@ -36,6 +36,8 @@ METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 PEER_RELATION_NAME = "vault-peers"
+INGRESS_RELATION_NAME = "ingress"
+HAPROXY_APPLICATION_NAME = "haproxy"
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
 VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
@@ -145,6 +147,21 @@ async def self_signed_certificates_idle(ops_test: OpsTest) -> Task:
             )
 
     return create_task(deploy_self_signed_certificates(ops_test))
+
+
+@pytest.fixture(scope="module")
+async def haproxy_idle(ops_test: OpsTest) -> Task:
+    """Deploy the `haproxy` charm."""
+
+    async def deploy_haproxy(ops_test: OpsTest) -> None:
+        assert ops_test.model
+        await deploy_if_not_exists(ops_test.model, HAPROXY_APPLICATION_NAME, channel="2.8/edge")
+        async with ops_test.fast_forward(fast_interval="60s"):
+            await ops_test.model.wait_for_idle(
+                apps=[HAPROXY_APPLICATION_NAME],
+            )
+
+    return create_task(deploy_haproxy(ops_test))
 
 
 @pytest.fixture(scope="module")
@@ -387,6 +404,7 @@ async def test_deploy_all_the_things(
     ops_test: OpsTest,
     vault_idle: Task,
     self_signed_certificates_idle: Task,
+    haproxy_idle: Task,
     vault_kv_requirer_idle: Task,
     vault_pki_requirer_idle: Task,
     grafana_deployed: Task,
@@ -469,6 +487,31 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
             wait_for_exact_units=NUM_VAULT_UNITS,
         )
     vault.wait_for_raft_nodes(expected_num_nodes=NUM_VAULT_UNITS)
+
+
+@pytest.mark.abort_on_fail
+async def test_given_haproxy_deployed_when_integrated_then_status_is_active(
+    ops_test: OpsTest, haproxy_idle: Task
+):
+    assert ops_test.model
+    await haproxy_idle
+
+    await ops_test.model.integrate(
+        relation1=f"{APP_NAME}:ingress",
+        relation2=f"{HAPROXY_APPLICATION_NAME}:ingress",
+    )
+
+    await ops_test.model.integrate(
+        relation1=f"{SELF_SIGNED_CERTIFICATES_APPLICATION_NAME}:certificates",
+        relation2=f"{HAPROXY_APPLICATION_NAME}:certificates",
+    )
+
+    async with ops_test.fast_forward(fast_interval="60s"):
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            timeout=1000,
+        )
 
 
 @pytest.mark.abort_on_fail
