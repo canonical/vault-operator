@@ -100,6 +100,7 @@ VAULT_SNAP_CHANNEL = "1.16/stable"
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2300"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
+INGRESS_RELATION_NAME = "ingress"
 
 
 class VaultOperatorCharm(CharmBase):
@@ -135,6 +136,7 @@ class VaultOperatorCharm(CharmBase):
         common_name = self.juju_facade.get_string_config("common_name")
         self.ingress = IngressPerAppRequirer(
             charm=self,
+            relation_name=INGRESS_RELATION_NAME,
             port=VAULT_PORT,
             strip_prefix=True,
             scheme=lambda: "https",
@@ -183,6 +185,7 @@ class VaultOperatorCharm(CharmBase):
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
+        self.framework.observe(self.on.get_ingress_url_action, self._on_get_ingress_url_action)
 
     def _on_vault_kv_client_detached(self, event: VaultKvClientDetachedEvent):
         KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
@@ -579,6 +582,19 @@ class VaultOperatorCharm(CharmBase):
             return
 
         event.set_results({"restored": event.params.get("backup-id")})
+
+    def _on_get_ingress_url_action(self, event: ActionEvent) -> None:
+        """Handle the get-ingress-url action.
+
+        Returns the ingress URL for the charm.
+        """
+        if not self.juju_facade.relation_exists(INGRESS_RELATION_NAME):
+            event.fail(message="Ingress relation does not exist")
+            return
+        if not self.ingress.url:
+            event.fail(message="Ingress URL is not available yet")
+            return
+        event.set_results({"ingress-url": self.ingress.url})
 
     def _vault_service_is_running(self) -> bool:
         """Check if the Vault service is running."""
