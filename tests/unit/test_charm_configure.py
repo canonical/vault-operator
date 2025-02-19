@@ -3,8 +3,10 @@
 # See LICENSE file for licensing details.
 
 
+import os
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import hcl
@@ -245,7 +247,6 @@ class TestCharmConfigure(VaultCharmFixtures):
         actual_config_hcl = hcl.loads(actual_config)
         assert actual_config_hcl["seal"]["transit"]["address"] == "1.2.3.4"
         assert actual_config_hcl["seal"]["transit"]["mount_path"] == "charm-autounseal"
-        assert actual_config_hcl["seal"]["transit"]["token"] == "some token"
         assert actual_config_hcl["seal"]["transit"]["key_name"] == "key name"
         self.mock_vault.authenticate.assert_called_with(AppRole("role id", "secret id"))
         self.mock_tls.push_autounseal_ca_cert.assert_called_with("ca cert")
@@ -329,8 +330,45 @@ class TestCharmConfigure(VaultCharmFixtures):
             "https://myhostname:8200",
         )
 
-    # KV
+    def test_given_autounseal_details_available_when_configure_then_token_added_to_env_vars(
+        self, tmp_path: Path
+    ):
+        self.mock_machine.pull.return_value = StringIO("")
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            address="http://fake.com",
+            mount_path="fake-mount",
+            key_name="fake-key",
+            role_id="fake-role-id",
+            secret_id="fake-secret-id",
+            ca_certificate="fake-ca-cert",
+        )
+        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+            "some token"
+        )
 
+        peer_relation = testing.PeerRelation(
+            endpoint="vault-peers",
+        )
+        vault_autounseal_relation = testing.Relation(
+            endpoint="vault-autounseal-provides",
+            interface="vault-autounseal",
+            remote_app_name="vault-autounseal-requirer",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation, vault_autounseal_relation],
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+        assert os.environ.get("VAULT_TOKEN") == "some token"
+
+        # Test that the token is removed from the environment variables when the autounseal details are not available
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+        assert os.environ.get("VAULT_TOKEN") is None
+
+    # KV
     def test_given_kv_request_when_configure_then_generate_credentials_for_requirer(
         self,
     ):
