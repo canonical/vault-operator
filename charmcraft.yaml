@@ -166,7 +166,3 @@ actions:
         description: >-
           Backup ID to restore.
     required: [backup-id]
-  
-  get-ingress-url:
-    description: >-
-      Get the ingress URL for the charm.

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 import pytest
-import requests
 import yaml
 from cryptography import x509
 from juju.application import Application
@@ -490,8 +489,6 @@ async def test_given_charm_deployed_when_vault_initialized_and_unsealed_and_auth
     vault.wait_for_raft_nodes(expected_num_nodes=NUM_VAULT_UNITS)
 
 
-@pytest.mark.abort_on_fail
-@pytest.mark.xfail(reason="https://github.com/canonical/haproxy-operator/issues/70")
 async def test_given_haproxy_deployed_when_integrated_then_status_is_active(
     ops_test: OpsTest, haproxy_idle: Task
 ):
@@ -525,21 +522,6 @@ async def test_given_haproxy_deployed_when_integrated_then_status_is_active(
             status="active",
             timeout=1000,
         )
-    vault_leader_unit = await get_leader_unit(ops_test.model, APP_NAME)
-
-    get_ingress_url_action = await vault_leader_unit.run_action(
-        action_name="get-ingress-url",
-    )
-
-    action_output = await ops_test.model.get_action_output(
-        action_uuid=get_ingress_url_action.entity_id, wait=30
-    )
-    assert action_output["ingress-url"]
-    ingress_url = action_output["ingress-url"]
-    ha_proxy_ip = haproxy_app.units[0].public_address
-    ingress_url = ingress_url.replace(external_hostname, ha_proxy_ip)
-    response = requests.get(ingress_url, verify=False)
-    assert response.status_code == 200
 
 
 @pytest.mark.abort_on_fail
