@@ -73,6 +73,9 @@ requires:
       use this certificate to sign the certificates it issues on the `vault-pki` interface.
   s3-parameters:
     interface: s3
+  ingress:
+    interface: ingress
+    limit: 1
 
 type: charm
 bases:
