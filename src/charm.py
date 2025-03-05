@@ -21,6 +21,7 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     TLSCertificatesProvidesV4,
     TLSCertificatesRequiresV4,
 )
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from charms.vault_k8s.v0.juju_facade import (
     JujuFacade,
     NoSuchSecretError,
@@ -99,6 +100,7 @@ VAULT_SNAP_CHANNEL = "1.16/stable"
 VAULT_SNAP_NAME = "vault"
 VAULT_SNAP_REVISION = "2300"
 VAULT_STORAGE_PATH = "/var/snap/vault/common/raft"
+INGRESS_RELATION_NAME = "ingress"
 
 
 class VaultOperatorCharm(CharmBase):
@@ -132,6 +134,14 @@ class VaultOperatorCharm(CharmBase):
             relationship_name=PKI_RELATION_NAME,
         )
         common_name = self.juju_facade.get_string_config("common_name")
+        self.ingress = IngressPerAppRequirer(
+            charm=self,
+            relation_name=INGRESS_RELATION_NAME,
+            port=VAULT_PORT,
+            strip_prefix=True,
+            scheme=lambda: "https",
+            redirect_https=True,
+        )
         certificate_requests = [self._get_certificate_request(common_name)] if common_name else []
         self.tls_certificates_pki = TLSCertificatesRequiresV4(
             charm=self,
