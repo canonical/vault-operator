@@ -1,7 +1,5 @@
 # Vault Operator (machine)
 
-## Usage
+**This repository has moved to [Vault K8s Operator](https://github.com/canonical/vault-k8s-operator)**
 
-```shell
-juju deploy vault -n 5
-```
+Both the Vault Operator and Vault K8s Operator are now maintained in the same repository.
